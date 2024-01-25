@@ -12,6 +12,7 @@ import (
 	"github.com/pion/webrtc/v3/pkg/media/h264reader"
 	"github.com/pion/webrtc/v3/pkg/media/ivfreader"
 	"github.com/pion/webrtc/v3/pkg/media/oggreader"
+	"github.com/livekit/protocol/livekit"
 )
 
 const (
@@ -68,6 +69,42 @@ func ReaderTrackWithOnWriteComplete(f func()) func(provider *ReaderSampleProvide
 func ReaderTrackWithRTCPHandler(f func(rtcp.Packet)) func(provider *ReaderSampleProvider) {
 	return func(provider *ReaderSampleProvider) {
 		provider.trackOpts = append(provider.trackOpts, WithRTCPHandler(f))
+	}
+}
+
+func ReaderTrackWithSimulcastHigh(simulcastID string) func(provider *ReaderSampleProvider) {
+	return func(provider *ReaderSampleProvider) {
+		layer = &livekit.VideoLayer{
+			Width:   1280,
+			Height:  720,
+			Quality: livekit.VideoQuality_HIGH,
+		}
+
+		provider.trackOpts = append(provider.trackOpts, WithSimulcast(simulcastID, layer))
+	}
+}
+
+func ReaderTrackWithSimulcastMedium(simulcastID string) func(provider *ReaderSampleProvider) {
+	return func(provider *ReaderSampleProvider) {
+		layer = &livekit.VideoLayer{
+			Width:   640,
+			Height:  360,
+			Quality: livekit.VideoQuality_MEDIUM,
+		}
+
+		provider.trackOpts = append(provider.trackOpts, WithSimulcast(simulcastID, layer))
+	}
+}
+
+func ReaderTrackWithSimulcastLow(simulcastID string) func(provider *ReaderSampleProvider) {
+	return func(provider *ReaderSampleProvider) {
+		layer = &livekit.VideoLayer{
+			Width:   320,
+			Height:  180,
+			Quality: livekit.VideoQuality_LOW,
+		}
+
+		provider.trackOpts = append(provider.trackOpts, WithSimulcast(simulcastID, layer))
 	}
 }
 
