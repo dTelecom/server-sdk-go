@@ -13,7 +13,7 @@
 ## Installation
 
 ```shell
-go get github.com/livekit/server-sdk-go
+go get github.com/dtelecom/server-sdk-go
 ```
 
 Note: since v1.0 release, this package requires Go 1.18+ in order to build.
@@ -24,8 +24,8 @@ Note: since v1.0 release, this package requires Go 1.18+ in order to build.
 import (
 	"time"
 
-	lksdk "github.com/livekit/server-sdk-go"
-	"github.com/livekit/protocol/auth"
+	lksdk "github.com/dtelecom/server-sdk-go"
+	"github.com/dtelecom/protocol/auth"
 )
 
 func getJoinToken(apiKey, apiSecret, room, identity string) (string, error) {
@@ -48,8 +48,8 @@ RoomService gives you complete control over rooms and participants within them. 
 
 ```go
 import (
-	lksdk "github.com/livekit/server-sdk-go"
-	livekit "github.com/livekit/protocol/livekit"
+	lksdk "github.com/dtelecom/server-sdk-go"
+	livekit "github.com/dtelecom/protocol/livekit"
 )
 
 func main() {
@@ -102,7 +102,7 @@ The Participant SDK gives you access programmatic access as a client enabling yo
 
 ```go
 import (
-  lksdk "github.com/livekit/server-sdk-go"
+  lksdk "github.com/dtelecom/server-sdk-go"
 )
 
 func main() {
@@ -202,8 +202,6 @@ if _, err = room.LocalParticipant.PublishTrack(track, &lksdk.TrackPublicationOpt
 }
 ```
 
-For a full working example, refer to [join.go](https://github.com/livekit/livekit-cli/blob/main/cmd/livekit-cli/join.go) in livekit-cli.
-
 ### Publish from other sources
 
 In order to publish from non-file sources, you will have to implement your own `SampleProvider`, that could provide frames of data with a `NextSample` method.
@@ -217,9 +215,9 @@ See [webhooks guide](https://docs.livekit.io/guides/webhooks) for configuration.
 
 ```go
 import (
-	"github.com/livekit/protocol/auth"
-	"github.com/livekit/protocol/livekit"
-	"github.com/livekit/protocol/webhook"
+	"github.com/dtelecom/protocol/auth"
+	"github.com/dtelecom/protocol/livekit"
+	"github.com/dtelecom/protocol/webhook"
 )
 
 var authProvider = auth.NewSimpleKeyProvider(

@@ -12,7 +12,7 @@ import (
 	"github.com/pion/webrtc/v3"
 
 	lksdp "github.com/livekit/protocol/sdp"
-	sdkinterceptor "github.com/livekit/server-sdk-go/pkg/interceptor"
+	sdkinterceptor "github.com/dtelecom/server-sdk-go/pkg/interceptor"
 )
 
 const (
