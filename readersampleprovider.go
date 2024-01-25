@@ -74,7 +74,7 @@ func ReaderTrackWithRTCPHandler(f func(rtcp.Packet)) func(provider *ReaderSample
 
 func ReaderTrackWithSimulcastHigh(simulcastID string) func(provider *ReaderSampleProvider) {
 	return func(provider *ReaderSampleProvider) {
-		layer = &livekit.VideoLayer{
+		layer := &livekit.VideoLayer{
 			Width:   1280,
 			Height:  720,
 			Quality: livekit.VideoQuality_HIGH,
@@ -86,7 +86,7 @@ func ReaderTrackWithSimulcastHigh(simulcastID string) func(provider *ReaderSampl
 
 func ReaderTrackWithSimulcastMedium(simulcastID string) func(provider *ReaderSampleProvider) {
 	return func(provider *ReaderSampleProvider) {
-		layer = &livekit.VideoLayer{
+		layer := &livekit.VideoLayer{
 			Width:   640,
 			Height:  360,
 			Quality: livekit.VideoQuality_MEDIUM,
@@ -98,7 +98,7 @@ func ReaderTrackWithSimulcastMedium(simulcastID string) func(provider *ReaderSam
 
 func ReaderTrackWithSimulcastLow(simulcastID string) func(provider *ReaderSampleProvider) {
 	return func(provider *ReaderSampleProvider) {
-		layer = &livekit.VideoLayer{
+		layer := &livekit.VideoLayer{
 			Width:   320,
 			Height:  180,
 			Quality: livekit.VideoQuality_LOW,
