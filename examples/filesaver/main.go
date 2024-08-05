@@ -18,6 +18,9 @@ import (
 
 	lksdk "github.com/dtelecom/server-sdk-go"
 	"github.com/dtelecom/server-sdk-go/pkg/samplebuilder"
+    livekit "github.com/livekit/protocol/livekit"
+    "context"
+    "log"
 )
 
 var (
@@ -130,4 +133,15 @@ func (t *TrackWriter) start() {
 			t.writer.WriteRTP(p)
 		}
 	}
+}
+
+// LivekitDeleteRoom tbd
+func LivekitDeleteRoom(url string, roomID string) {
+ roomClient := lksdk.NewRoomServiceClient(host, apiKey, apiSecret)
+ _, err := roomClient.DeleteRoom(context.Background(), &livekit.DeleteRoomRequest{
+  Room: roomID,
+ })
+ if err != nil {
+  log.Printf("LivekitDeleteRoom err: %v", err)
+ }
 }
