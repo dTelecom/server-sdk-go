@@ -16,11 +16,11 @@ import (
 	"github.com/pion/webrtc/v3/pkg/media/ivfwriter"
 	"github.com/pion/webrtc/v3/pkg/media/oggwriter"
 
+	"context"
 	lksdk "github.com/dtelecom/server-sdk-go"
 	"github.com/dtelecom/server-sdk-go/pkg/samplebuilder"
-    livekit "github.com/livekit/protocol/livekit"
-    "context"
-    "log"
+	livekit "github.com/livekit/protocol/livekit"
+	"log"
 )
 
 var (
@@ -137,11 +137,11 @@ func (t *TrackWriter) start() {
 
 // LivekitDeleteRoom tbd
 func LivekitDeleteRoom(url string, roomID string) {
- roomClient := lksdk.NewRoomServiceClient(host, apiKey, apiSecret)
- _, err := roomClient.DeleteRoom(context.Background(), &livekit.DeleteRoomRequest{
-  Room: roomID,
- })
- if err != nil {
-  log.Printf("LivekitDeleteRoom err: %v", err)
- }
+	roomClient := lksdk.NewRoomServiceClient(host, apiKey, apiSecret)
+	_, err := roomClient.DeleteRoom(context.Background(), &livekit.DeleteRoomRequest{
+		Room: roomID,
+	})
+	if err != nil {
+		log.Printf("LivekitDeleteRoom err: %v", err)
+	}
 }

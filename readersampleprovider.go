@@ -6,13 +6,13 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/livekit/protocol/livekit"
 	"github.com/pion/rtcp"
 	"github.com/pion/webrtc/v3"
 	"github.com/pion/webrtc/v3/pkg/media"
 	"github.com/pion/webrtc/v3/pkg/media/h264reader"
 	"github.com/pion/webrtc/v3/pkg/media/ivfreader"
 	"github.com/pion/webrtc/v3/pkg/media/oggreader"
-	"github.com/livekit/protocol/livekit"
 )
 
 const (
