@@ -2,7 +2,7 @@ module github.com/dtelecom/server-sdk-go
 
 go 1.18
 
-replace github.com/livekit/protocol v1.5.4 => github.com/dTelecom/protocol v1.0.16
+replace github.com/livekit/protocol v1.5.4 => github.com/dTelecom/protocol v1.0.18
 
 require (
 	github.com/bep/debounce v1.2.1
