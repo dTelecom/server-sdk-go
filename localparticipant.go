@@ -213,6 +213,27 @@ func (p *LocalParticipant) PublishData(data []byte, kind livekit.DataPacket_Kind
 		},
 	}
 
+	return p.publishDataRaw(packet, kind)
+}
+
+func (p *LocalParticipant) PublishDataTopic(data []byte, kind livekit.DataPacket_Kind, topic string) error {
+	packet := &livekit.DataPacket{
+		Kind: kind,
+		Value: &livekit.DataPacket_User{
+			User: &livekit.UserPacket{
+				// this is enforced on the server side, setting for completeness
+				ParticipantSid:  p.sid,
+				Payload:         data,
+				Topic: topic,
+			},
+		},
+	}
+
+	return p.publishDataRaw(packet, kind)
+}
+
+func (p *LocalParticipant) publishDataRaw(packet *livekit.DataPacket, kind livekit.DataPacket_Kind) error {
+
 	if err := p.engine.ensurePublisherConnected(true); err != nil {
 		return err
 	}
