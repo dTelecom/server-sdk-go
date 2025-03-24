@@ -224,7 +224,7 @@ func (p *LocalParticipant) PublishDataTopic(data []byte, kind livekit.DataPacket
 				// this is enforced on the server side, setting for completeness
 				ParticipantSid:  p.sid,
 				Payload:         data,
-				Topic: topic,
+				Topic: &topic,
 			},
 		},
 	}
