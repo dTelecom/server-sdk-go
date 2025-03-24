@@ -216,13 +216,12 @@ func (p *LocalParticipant) PublishData(data []byte, kind livekit.DataPacket_Kind
 	return p.publishDataRaw(packet, kind)
 }
 
-func (p *LocalParticipant) PublishDataTopic(data []byte, kind livekit.DataPacket_Kind, topic string) error {
+func (p *LocalParticipant) PublishDataTopic(data []byte, kind livekit.DataPacket_Kind, topic string, fromSid string) error {
 	packet := &livekit.DataPacket{
 		Kind: kind,
 		Value: &livekit.DataPacket_User{
 			User: &livekit.UserPacket{
-				// this is enforced on the server side, setting for completeness
-				ParticipantSid:  p.sid,
+				ParticipantSid:  fromSid,
 				Payload:         data,
 				Topic: &topic,
 			},
