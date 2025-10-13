@@ -98,3 +98,20 @@ func (c *RoomServiceClient) SendData(ctx context.Context, req *livekit.SendDataR
 	}
 	return c.roomService.SendData(ctx, req)
 }
+
+func (c *RoomServiceClient) ListRooms(ctx context.Context, req *livekit.ListRoomsRequest) (*livekit.ListRoomsResponse, error) {
+	ctx, err := c.withAuth(ctx, auth.VideoGrant{RoomList: true})
+	if err != nil {
+		return nil, err
+	}
+
+	return c.roomService.ListRooms(ctx, req)
+}
+
+func (c *RoomServiceClient) UpdateRoomMetadata(ctx context.Context, req *livekit.UpdateRoomMetadataRequest) (*livekit.Room, error) {
+	ctx, err := c.withAuth(ctx, auth.VideoGrant{RoomAdmin: true, Room: req.Room})
+	if err != nil {
+		return nil, err
+	}
+	return c.roomService.UpdateRoomMetadata(ctx, req)
+}
