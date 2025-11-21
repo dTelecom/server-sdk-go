@@ -1,8 +1,10 @@
 package main
 
 import (
+	"context"
 	"log"
 	"os"
+	"time"
 
 	lksdk "github.com/dtelecom/server-sdk-go"
 )
@@ -11,10 +13,21 @@ func main() {
 	contractAddress := os.Getenv("CONTRACT_ADDRESS")
 	solanaHostHTTP := os.Getenv("SOLANA_HOST_HTTP")
 	registryAuthority := os.Getenv("REGISTRY_AUTHORITY")
-	selfIP := os.Getenv("SELF_IP")
 	apiKey := os.Getenv("API_KEY")
 
-	nodeProvider := lksdk.NewNodeProvider(contractAddress, solanaHostHTTP, registryAuthority, selfIP)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	selfIP, err := lksdk.DetectPublicIP(ctx)
+	if err != nil {
+		log.Printf("Failed to detect public IP: %v", err)
+	}
+
+	log.Println("selfIP: ", selfIP)
+
+	nodeProvider, err := lksdk.NewNodeProvider(contractAddress, solanaHostHTTP, registryAuthority, &selfIP)
+	if err != nil {
+		log.Printf("Failed to create node provider: %v", err)
+	}
 
 	nodes, err := nodeProvider.List()
 	if err != nil {
