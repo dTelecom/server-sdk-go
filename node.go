@@ -49,10 +49,9 @@ type NodeProvider struct {
 
 // NewNodeProvider data
 func NewNodeProvider(contractAddress string, solanaHostHTTP string, registryAuthority string, selfIP *string) (*NodeProvider, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
 	if selfIP == nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
 		publicIP, err := DetectPublicIP(ctx)
 		if err != nil {
 			log.Printf("Failed to detect public IP: %v", err)
