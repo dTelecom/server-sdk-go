@@ -5,9 +5,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"net"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -46,12 +48,24 @@ type NodeProvider struct {
 }
 
 // NewNodeProvider data
-func NewNodeProvider(contractAddress string, solanaHostHTTP string, registryAuthority string, selfIP string) *NodeProvider {
+func NewNodeProvider(contractAddress string, solanaHostHTTP string, registryAuthority string, selfIP *string) (*NodeProvider, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	if selfIP == nil {
+		publicIP, err := DetectPublicIP(ctx)
+		if err != nil {
+			log.Printf("Failed to detect public IP: %v", err)
+			return nil, fmt.Errorf("failed to detect public IP: %v", err)
+		}
+		selfIP = &publicIP
+	}
+
 	provider := &NodeProvider{
 		ContractAddress:   contractAddress,
 		SolanaHostHTTP:    solanaHostHTTP,
 		RegistryAuthority: registryAuthority,
-		SelfIP:            selfIP,
+		SelfIP:            *selfIP,
 		lock:              sync.RWMutex{},
 		nodeValues:        make(map[string]nodeMessage),
 	}
@@ -59,7 +73,7 @@ func NewNodeProvider(contractAddress string, solanaHostHTTP string, registryAuth
 	provider.startRefresh()
 	go provider.processRefresh()
 
-	return provider
+	return provider, nil
 }
 
 // List nodes
@@ -264,30 +278,30 @@ func (p *NodeProvider) GetRelevants(ip string, domain string) ([]RelevantsRespon
 
 	url := "https://" + domain + "/relevants"
 
-    body, err := json.Marshal(req)
-    if err != nil {
-        return nil, err
-    }
+	body, err := json.Marshal(req)
+	if err != nil {
+		return nil, err
+	}
 
-    httpReq, err := http.NewRequestWithContext(ctxTimeout, http.MethodPost, url, bytes.NewReader(body))
-    if err != nil {
-        return nil, err
-    }
-    httpReq.Header.Set("Content-Type", "application/json")
+	httpReq, err := http.NewRequestWithContext(ctxTimeout, http.MethodPost, url, bytes.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
 
-    resp, err := http.DefaultClient.Do(httpReq)
-    if err != nil {
-        return nil, err
-    }
-    defer resp.Body.Close()
+	resp, err := http.DefaultClient.Do(httpReq)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
 
-    if resp.StatusCode != http.StatusOK {
-        return nil, fmt.Errorf("unexpected status code: %d", resp.StatusCode)
-    }
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("unexpected status code: %d", resp.StatusCode)
+	}
 
-    if err := json.NewDecoder(resp.Body).Decode(&res); err != nil {
-        return nil, err
-    }
+	if err := json.NewDecoder(resp.Body).Decode(&res); err != nil {
+		return nil, err
+	}
 
 	return res, err
 }
@@ -349,4 +363,24 @@ func (p *NodeProvider) GetNewLivekitURLs(ip string) []string {
 	}
 
 	return fallback
+}
+
+func DetectPublicIP(ctx context.Context) (string, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://api.ipify.org?format=text", nil)
+	if err != nil {
+		return "", err
+	}
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	b, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", err
+	}
+
+	return strings.TrimSpace(string(b)), nil
 }
