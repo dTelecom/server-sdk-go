@@ -31,6 +31,11 @@ func (v *nodeMessage) isExpired() bool {
 	return time.Now().Unix() >= v.TTL
 }
 
+var defaultFallbackURLs = []string{
+	"wss://2639923154.dtel.network",
+	"wss://3115567758.dtel.network",
+	"wss://3630803282.dtel.network",
+}
 const (
 	defaultClientTTL    = 600 * time.Second
 	nodeRefreshInterval = 60 * time.Second
@@ -45,11 +50,20 @@ type NodeProvider struct {
 	lock              sync.RWMutex
 	nodeValues        map[string]nodeMessage
 	nodesOrdered      []RelevantsResponse
+	FallbackURLs      []string
+}
+
+type NodeProviderOption struct {
+	ContractAddress string
+	SolanaHostHTTP string
+	RegistryAuthority string
+	SelfIP *string
+	FallbackURLs []string
 }
 
 // NewNodeProvider data
-func NewNodeProvider(contractAddress string, solanaHostHTTP string, registryAuthority string, selfIP *string) (*NodeProvider, error) {
-	if selfIP == nil {
+func NewNodeProvider(options NodeProviderOption) (*NodeProvider, error) {
+	if options.SelfIP == nil {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		publicIP, err := DetectPublicIP(ctx)
@@ -57,14 +71,18 @@ func NewNodeProvider(contractAddress string, solanaHostHTTP string, registryAuth
 			log.Printf("Failed to detect public IP: %v", err)
 			return nil, fmt.Errorf("failed to detect public IP: %v", err)
 		}
-		selfIP = &publicIP
+		options.SelfIP = &publicIP
+	}
+	if len(options.FallbackURLs) == 0 {
+		options.FallbackURLs = defaultFallbackURLs
 	}
 
 	provider := &NodeProvider{
-		ContractAddress:   contractAddress,
-		SolanaHostHTTP:    solanaHostHTTP,
-		RegistryAuthority: registryAuthority,
-		SelfIP:            *selfIP,
+		ContractAddress:   options.ContractAddress,
+		SolanaHostHTTP:    options.SolanaHostHTTP,
+		RegistryAuthority: options.RegistryAuthority,
+		SelfIP:            *options.SelfIP,
+		FallbackURLs:      options.FallbackURLs,
 		lock:              sync.RWMutex{},
 		nodeValues:        make(map[string]nodeMessage),
 	}
@@ -247,11 +265,6 @@ type RelevantRequest struct {
 	IP string `json:"ip"`
 }
 
-// RelevantResponse data
-type RelevantResponse struct {
-	Domain string `json:"domain"`
-}
-
 // RelevantsResponse data
 type RelevantsResponse struct {
 	ID           string  `json:"id"`
@@ -358,7 +371,7 @@ func (p *NodeProvider) GetNewLivekitURLs(ip string) []string {
 	}
 
 	if len(fallback) == 0 {
-		fallback = append(fallback, "wss://2639923154.dtel.network", "wss://3115567758.dtel.network", "wss://3630803282.dtel.network")
+		fallback = append(fallback, defaultFallbackURLs...)
 	}
 
 	return fallback

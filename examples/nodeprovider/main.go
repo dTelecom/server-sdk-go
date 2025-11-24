@@ -24,7 +24,12 @@ func main() {
 
 	log.Println("selfIP: ", selfIP)
 
-	nodeProvider, err := lksdk.NewNodeProvider(contractAddress, solanaHostHTTP, registryAuthority, &selfIP)
+	nodeProvider, err := lksdk.NewNodeProvider(lksdk.NodeProviderOption{
+		ContractAddress: contractAddress,
+		SolanaHostHTTP: solanaHostHTTP,
+		RegistryAuthority: registryAuthority,
+		SelfIP: &selfIP,
+	})
 	if err != nil {
 		log.Printf("Failed to create node provider: %v", err)
 	}
