@@ -34,14 +34,6 @@ func init() {
 func main() {
 	flag.Parse()
 
-	url = "ws://localhost:7880"
-	apiKey = "4sxGjTwxMHePA3X5gsi42chui91YxN2juoxXwM3fXP2Q"
-	apiSecret = "2ezR1fmGT8NNNFWTMoTVmjtdZ6yzcQBDfY7MDpKcTup5yHLD1tjn7QVFTJm7XLGv4kAVRMb4hZwsLm4iTSLx4GME"
-	roomName = "room1"
-	identity = "user2"
-
-	outPath = "/Users/vsitnev/Desktop/dTelecom/server-sdk-go/examples/screenshot/screenshot.webp"
-
 	if url == "" || apiKey == "" || apiSecret == "" || roomName == "" || identity == "" {
 		log.Printf("invalid arguments: need -host, -api-key, -api-secret, -room-name, -identity")
 		return
