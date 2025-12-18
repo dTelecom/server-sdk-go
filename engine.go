@@ -1,6 +1,7 @@
 package lksdk
 
 import (
+	"errors"
 	"sync"
 	"time"
 
@@ -11,6 +12,41 @@ import (
 
 	"github.com/livekit/protocol/livekit"
 )
+
+type serverPool struct {
+	mu     sync.RWMutex
+	urls   []string
+	index  int
+}
+
+func (p *serverPool) Init(urls []string) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	p.urls = append([]string(nil), urls...)
+	p.index = 0
+}
+
+func (p *serverPool) Current() string {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+
+	if len(p.urls) == 0 {
+		return ""
+	}
+	return p.urls[p.index]
+}
+
+func (p *serverPool) Advance() string {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	if len(p.urls) == 0 {
+		return ""
+	}
+	p.index = (p.index + 1) % len(p.urls)
+	return p.urls[p.index]
+}
 
 const (
 	reliableDataChannelName = "_reliable"
@@ -37,7 +73,8 @@ type RTCEngine struct {
 	closed             atomic.Bool
 	reconnecting       atomic.Bool
 
-	url        string
+	serverPool serverPool
+
 	token      atomic.String
 	connParams *ConnectParams
 
@@ -95,13 +132,45 @@ func NewRTCEngine() *RTCEngine {
 	return e
 }
 
-func (e *RTCEngine) Join(url string, token string, params *ConnectParams) (*livekit.JoinResponse, error) {
+func (e *RTCEngine) join(url string, token string, params *ConnectParams) (*livekit.JoinResponse, error) {
 	res, err := e.client.Join(url, token, params)
 	if err != nil {
 		return nil, err
 	}
 
-	e.url = url
+	e.token.Store(token)
+	e.connParams = params
+
+	if err = e.configure(res); err != nil {
+		return nil, err
+	}
+
+	e.client.Start()
+
+	// send offer
+	if !res.SubscriberPrimary {
+		e.publisher.Negotiate()
+	}
+
+	if err = e.waitUntilConnected(); err != nil {
+		return nil, err
+	}
+	e.hasConnected.Store(true)
+	return res, err
+}
+
+func (e *RTCEngine) JoinWithServers(urls []string, token string, params *ConnectParams) (*livekit.JoinResponse, error) {
+	if len(urls) == 0 {
+		return nil, errors.New("no servers provided")
+	}
+
+	e.serverPool.Init(urls)
+
+	res, err := e.client.Join(e.serverPool.Current(), token, params)
+	if err != nil {
+		return nil, err
+	}
+	
 	e.token.Store(token)
 	e.connParams = params
 
@@ -405,7 +474,7 @@ func (e *RTCEngine) handleDisconnect(fullReconnect bool) {
 				if reconnectCount == 0 && e.OnRestarting != nil {
 					e.OnRestarting()
 				}
-				logger.Infow("restarting connection...", "reconnectCount", reconnectCount)
+				logger.Infow("restarting connection...", "server", e.serverPool.Current(), "reconnectCount", reconnectCount)
 				if err := e.restartConnection(); err != nil {
 					logger.Errorw("restart connection failed", err)
 				} else {
@@ -440,7 +509,7 @@ func (e *RTCEngine) handleDisconnect(fullReconnect bool) {
 }
 
 func (e *RTCEngine) resumeConnection() error {
-	_, err := e.client.Join(e.url, e.token.Load(), &ConnectParams{Reconnect: true})
+	_, err := e.client.Join(e.serverPool.Current(), e.token.Load(), &ConnectParams{Reconnect: true})
 	if err != nil {
 		return err
 	}
@@ -477,7 +546,7 @@ func (e *RTCEngine) restartConnection() error {
 		e.subscriber.Close()
 	}
 
-	res, err := e.Join(e.url, e.token.Load(), e.connParams)
+	res, err := e.join(e.serverPool.Current(), e.token.Load(), e.connParams)
 	if err != nil {
 		return err
 	}
@@ -506,12 +575,17 @@ func (e *RTCEngine) createPublisherAnswerAndSend() error {
 }
 
 func (e *RTCEngine) handleLeave(leave *livekit.LeaveRequest) {
-	if leave.GetCanReconnect() {
-		e.handleDisconnect(true)
-	} else {
+	if !leave.GetCanReconnect() {
 		logger.Infow("Leave room", "reason", leave.GetReason())
 		if e.OnDisconnected != nil {
 			e.OnDisconnected()
 		}
+		return
 	}
+
+	if leave.GetReason().String() == "SERVER_SHUTDOWN" {
+		e.serverPool.Advance()
+	}
+
+	e.handleDisconnect(true)
 }
