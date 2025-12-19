@@ -2,6 +2,8 @@ package lksdk
 
 import (
 	"encoding/json"
+	"fmt"
+	"runtime"
 	"strings"
 
 	"github.com/pion/webrtc/v3"
@@ -10,6 +12,8 @@ import (
 	"github.com/livekit/protocol/livekit"
 )
 
+
+// === Proto ===
 func ToProtoSessionDescription(sd webrtc.SessionDescription) *livekit.SessionDescription {
 	return &livekit.SessionDescription{
 		Type: sd.Type.String(),
@@ -60,6 +64,7 @@ func FromProtoIceServers(iceservers []*livekit.ICEServer) []webrtc.ICEServer {
 	return servers.([]webrtc.ICEServer)
 }
 
+// === Url ===
 func ToHttpURL(url string) string {
 	if strings.HasPrefix(url, "ws") {
 		return strings.Replace(url, "ws", "http", 1)
@@ -74,4 +79,17 @@ func ToWebsocketURL(url string) string {
 	return url
 }
 
-// -----------------------------------------------
+// === Trace ===
+
+func funcName(skip int) string {
+	pc, file, line, _ := runtime.Caller(skip)
+	return fmt.Sprintf("%s (%s:%d)", runtime.FuncForPC(pc).Name(), shortFileName(file), line)
+}
+
+func shortFileName(fileName string) string {
+	index := strings.LastIndex(fileName, "/")
+	if index != -1 {
+		return fileName[index+1:]
+	}
+	return fileName
+}
