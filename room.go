@@ -100,9 +100,9 @@ func CreateRoom(callback *RoomCallback) *Room {
 }
 
 // ConnectToRoom creates and joins the room
-func ConnectToRoom(url string, info ConnectInfo, callback *RoomCallback, opts ...ConnectOption) (*Room, error) {
+func ConnectToRoom(urls []string, info ConnectInfo, callback *RoomCallback, opts ...ConnectOption) (*Room, error) {
 	room := CreateRoom(callback)
-	err := room.Join(url, info, opts...)
+	err := room.Join(urls, info, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -110,9 +110,9 @@ func ConnectToRoom(url string, info ConnectInfo, callback *RoomCallback, opts ..
 }
 
 // ConnectToRoomWithToken creates and joins the room
-func ConnectToRoomWithToken(url, token string, callback *RoomCallback, opts ...ConnectOption) (*Room, error) {
+func ConnectToRoomWithToken(urls []string, token string, callback *RoomCallback, opts ...ConnectOption) (*Room, error) {
 	room := CreateRoom(callback)
-	err := room.JoinWithToken(url, token, opts...)
+	err := room.JoinWithToken(urls, token, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -132,7 +132,7 @@ func (r *Room) SID() string {
 }
 
 // Join - joins the room as with default permissions
-func (r *Room) Join(url string, info ConnectInfo, opts ...ConnectOption) error {
+func (r *Room) Join(urls []string, info ConnectInfo, opts ...ConnectOption) error {
 	var params ConnectParams
 	for _, opt := range opts {
 		opt(&params)
@@ -158,11 +158,11 @@ func (r *Room) Join(url string, info ConnectInfo, opts ...ConnectOption) error {
 		return err
 	}
 
-	return r.JoinWithToken(url, token, opts...)
+	return r.JoinWithToken(urls, token, opts...)
 }
 
 // JoinWithToken - customize participant options by generating your own token
-func (r *Room) JoinWithToken(url, token string, opts ...ConnectOption) error {
+func (r *Room) JoinWithToken(urls []string, token string, opts ...ConnectOption) error {
 	params := &ConnectParams{
 		AutoSubscribe: true,
 	}
@@ -170,7 +170,7 @@ func (r *Room) JoinWithToken(url, token string, opts ...ConnectOption) error {
 		opt(params)
 	}
 
-	joinRes, err := r.engine.Join(url, token, params)
+	joinRes, err := r.engine.JoinWithServers(urls, token, params)
 	if err != nil {
 		return err
 	}

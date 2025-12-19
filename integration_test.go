@@ -36,7 +36,7 @@ func TestMain(m *testing.M) {
 }
 
 func createAgent(roomName string, callback *RoomCallback, name string) (*Room, error) {
-	room, err := ConnectToRoom(host, ConnectInfo{
+	room, err := ConnectToRoom([]string{host}, ConnectInfo{
 		APIKey:              apiKey,
 		APISecret:           apiSecret,
 		RoomName:            roomName,
@@ -123,7 +123,7 @@ func TestJoin(t *testing.T) {
 }
 
 func TestJoinError(t *testing.T) {
-	_, err := ConnectToRoomWithToken(host, "invalid", nil)
+	_, err := ConnectToRoomWithToken([]string{host}, "invalid", nil)
 	require.Error(t, err)
 
 	errString := err.Error()
