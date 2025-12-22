@@ -49,7 +49,7 @@ type NodeProvider struct {
 	SelfIP            string
 	lock              sync.RWMutex
 	nodeValues        map[string]nodeMessage
-	nodesOrdered      []RelevantsResponse
+	nodesOrdered      []RelevantResponse
 	FallbackURLs      []string
 }
 
@@ -109,7 +109,7 @@ func (p *NodeProvider) List() (map[string]Node, error) {
 }
 
 // ListOrdered nodes
-func (p *NodeProvider) ListOrdered() []RelevantsResponse {
+func (p *NodeProvider) ListOrdered() []RelevantResponse {
 	return p.nodesOrdered
 }
 
@@ -265,8 +265,8 @@ type RelevantRequest struct {
 	IP string `json:"ip"`
 }
 
-// RelevantsResponse data
-type RelevantsResponse struct {
+// RelevantResponse data
+type RelevantResponse struct {
 	ID           string  `json:"id"`
 	Participants int     `json:"participants"`
 	Domain       string  `json:"domain"`
@@ -278,8 +278,8 @@ type RelevantsResponse struct {
 }
 
 // GetRelevants nodes
-func (p *NodeProvider) GetRelevants(ip string, domain string) ([]RelevantsResponse, error) {
-	var res []RelevantsResponse
+func (p *NodeProvider) GetRelevants(ip string, domain string) ([]RelevantResponse, error) {
+	var res []RelevantResponse
 
 	req := &RelevantRequest{
 		IP: ip,
