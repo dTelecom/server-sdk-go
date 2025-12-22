@@ -12,7 +12,7 @@ import (
 	"github.com/pion/webrtc/v3"
 )
 
-func MakeScreenShot(track *webrtc.TrackRemote, codec string) ([]byte, error) {
+func MakeScreenshot(track *webrtc.TrackRemote, codec string) ([]byte, error) {
 	switch codec {
 	case webrtc.MimeTypeVP8:
 		return makeScreenshotVP8(track)
