@@ -322,6 +322,11 @@ func (r *Room) handleResumed() {
 }
 
 func (r *Room) handleDataReceived(userPacket *livekit.UserPacket) {
+	if userPacket.ParticipantSid == "" {
+		// sent by a server through the room service: no sender participant
+		r.callback.OnServerDataReceived(userPacket.Payload, userPacket.GetTopic())
+		return
+	}
 	if userPacket.ParticipantSid == r.LocalParticipant.sid {
 		// if sent by itself, do not handle data
 		return

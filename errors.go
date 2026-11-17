@@ -13,4 +13,7 @@ var (
 	ErrCannotFindTrack          = errors.New("could not find the track")
 	ErrInvalidParameter         = errors.New("invalid parameter")
 	ErrCannotConnectSignal      = errors.New("could not establish signal connection")
+	// ErrPublishNotPermitted: the participant's token does not allow publishing this track
+	// (canPublish false, or the source is not in canPublishSources). The node would not answer.
+	ErrPublishNotPermitted = errors.New("not permitted to publish this track")
 )
