@@ -373,8 +373,8 @@ func (s *ModerationService) Get(ctx context.Context, requestID string) (*Moderat
 	return m, nil
 }
 
-// StreamTicket returns a ticket for one moderation WebSocket, valid for 10 minutes. It holds no
-// API secret, so a server can hand it to a browser.
+// StreamTicket returns a ticket for one moderation WebSocket, valid for 10 minutes; Stream gets
+// one and connects. Moderation runs on your backend, which acts on the results.
 func (s *ModerationService) StreamTicket(ctx context.Context) (*ModerationStreamTicket, error) {
 	var r struct {
 		Token           string    `json:"token"`
