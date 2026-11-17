@@ -10,6 +10,113 @@
 
 <!--BEGIN_DESCRIPTION-->Use this SDK to manage <a href="https://livekit.io/">LiveKit</a> rooms and create access tokens from your Go backend.<!--END_DESCRIPTION-->
 
+## dTelecom Cloud
+
+The `cloud` package is the Go client of dTelecom Cloud, the same API as `@dtelecom/server-sdk-js` 4.2:
+participant tokens, room administration, live speech sessions, file transcription, WAV synthesis,
+translation, vision, moderation and node webhooks. It needs Go 1.18+ and no `replace` directive.
+
+```shell
+go get github.com/dtelecom/server-sdk-go@v1.1.0
+```
+
+```go
+import "github.com/dtelecom/server-sdk-go/cloud"
+
+// Reads DTELECOM_API_KEY, DTELECOM_API_SECRET and DTELECOM_CLOUD_URL when the options are empty.
+c, err := cloud.New(cloud.Options{})
+
+// A token for a client SDK. TTL defaults to 6 hours, at most 24.
+tok, err := c.CreateToken(ctx, cloud.TokenOptions{
+	Room:     "demo",
+	Identity: "alice",
+	ClientIP: userIP, // picks the node nearest to the user
+})
+// give tok.Token and tok.WsURL to the client
+
+// Extend before tok.ExpiresAt, or the participant is removed about a minute after it.
+ext, err := c.ExtendToken(ctx, tok.SessionID, 30*time.Minute)
+```
+
+Errors from the cloud are `*cloud.APIError` with `Status`, `Code`, `RetryAfter`, `ID` and `Detail`:
+
+```go
+if cloud.IsCode(err, "concurrency_limit") { ... }
+```
+
+### Rooms
+
+```go
+rs := c.RoomService() // keep it: it caches admin tokens
+participants, err := rs.ListParticipants(ctx, "demo")
+err = rs.RemoveParticipant(ctx, "demo", "bob")
+_, err = rs.MutePublishedTrack(ctx, "demo", "alice", trackSID, true)
+err = rs.SendData(ctx, "demo", []byte("hello"), cloud.DataReliable, cloud.SendDataOptions{Topic: "chat"})
+err = rs.DeleteRoom(ctx, "demo")
+```
+
+Calls on a room nobody has joined return `cloud.ErrRoomNotLive`; a node's refusal is a `*cloud.NodeAPIError`.
+
+### A Go bot in a Cloud room
+
+The bot client in this module joins with a Cloud token:
+
+```go
+tok, _ := c.CreateToken(ctx, cloud.TokenOptions{Room: "demo", Identity: "bot"})
+room, err := lksdk.ConnectToRoomWithToken([]string{tok.WsURL}, tok.Token, lksdk.NewRoomCallback())
+```
+
+### AI services
+
+```go
+// Translation, vision and moderation: Running means call again with the same key, or poll.
+tr, err := c.Translate(ctx, cloud.TranslateOptions{Q: "Good morning", Target: "de", IdempotencyKey: "tr-1"})
+
+// Speech sessions: open StreamURL and send Token as session_key. One key, one connection.
+stt, err := c.STT.CreateSession(ctx, cloud.STTSessionOptions{Duration: 10 * time.Minute, Language: "en"})
+
+// Files: create, poll Get until JobCompleted, then read the result.
+job, err := c.Transcriptions.Create(ctx, cloud.TranscriptionOptions{File: f, Filename: "call.mp3", IdempotencyKey: "tx-1"})
+wav, err := c.WAV.Create(ctx, cloud.WAVOptions{Text: "Hello", IdempotencyKey: "wav-1"})
+audio, err := c.WAV.Download(ctx, wav.ID) // after completion; close it
+
+v, err := c.Vision.Snapshot(ctx, cloud.VisionOptions{Image: jpeg, Question: "What is on the screen?", IdempotencyKey: "v-1"})
+m, err := c.Moderation.Audio(ctx, cloud.ModerateAudioOptions{Audio: pcm16k, IdempotencyKey: "m-1"})
+
+// Moderation over one WebSocket, one item at a time.
+stream, err := c.Moderation.Stream(ctx)
+res, err := stream.SendVideoFrame(ctx, "frame-1", jpeg)
+```
+
+### Webhooks
+
+Webhook URLs are set per participant in `TokenOptions.WebhookURLs` (HTTPS only). The receiver
+checks the node's signature against the node registry; it needs outbound access to a Solana RPC.
+
+```go
+receiver, err := cloud.NewWebhookReceiver(cloud.WebhookOptions{})
+
+http.HandleFunc("/webhook", func(w http.ResponseWriter, r *http.Request) {
+	ev, err := receiver.ReceiveRequest(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusUnauthorized)
+		return
+	}
+	// ev.Event: participant_joined, participant_left, track_published or track_unpublished.
+	// Each event is sent once per URL, without retries; ev.ID is the same for every URL.
+})
+```
+
+### Tests against a cloud
+
+```shell
+DTELECOM_API_KEY=... DTELECOM_API_SECRET=... DTELECOM_CLOUD_URL=https://... \
+  go test -tags integration -run TestLive -v ./cloud
+```
+
+The rest of this README covers the self-hosted API: tokens signed locally with a node key, and the
+bot client.
+
 ## Installation
 
 ```shell

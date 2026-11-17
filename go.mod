@@ -5,6 +5,7 @@ go 1.18
 replace github.com/livekit/protocol v1.5.4 => github.com/dTelecom/protocol v1.0.22
 
 require (
+	filippo.io/edwards25519 v1.0.0-rc.1
 	github.com/bep/debounce v1.2.1
 	github.com/gagliardetto/solana-go v1.12.0
 	github.com/go-logr/stdr v1.2.2
@@ -12,6 +13,7 @@ require (
 	github.com/livekit/mediatransportutil v0.0.0-20230326055817-ed569ca13d26
 	github.com/livekit/protocol v1.5.4
 	github.com/magefile/mage v1.14.0
+	github.com/mr-tron/base58 v1.2.0
 	github.com/pion/interceptor v0.1.16
 	github.com/pion/rtcp v1.2.10
 	github.com/pion/rtp v1.7.13
@@ -25,7 +27,6 @@ require (
 )
 
 require (
-	filippo.io/edwards25519 v1.0.0-rc.1 // indirect
 	github.com/andres-erbsen/clock v0.0.0-20160526145045-9e14626cd129 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/blendle/zapdriver v1.3.1 // indirect
@@ -55,7 +56,6 @@ require (
 	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
 	github.com/modern-go/reflect2 v1.0.2 // indirect
 	github.com/mostynb/zstdpool-freelist v0.0.0-20201229113212-927304c0c3b1 // indirect
-	github.com/mr-tron/base58 v1.2.0 // indirect
 	github.com/pion/datachannel v1.5.5 // indirect
 	github.com/pion/dtls/v2 v2.2.6 // indirect
 	github.com/pion/ice/v2 v2.3.2 // indirect
