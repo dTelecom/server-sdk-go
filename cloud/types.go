@@ -323,8 +323,8 @@ type ModerationResult struct {
 // Moderation is a moderation request; Kind is moderation-audio or moderation-video.
 type Moderation = Request[ModerationResult]
 
-// ModerationStreamTicket opens one moderation WebSocket. It holds no API secret, so a server
-// can hand it to a browser.
+// ModerationStreamTicket opens one moderation WebSocket from your backend with
+// ConnectModerationStream.
 type ModerationStreamTicket struct {
 	Token string
 	// WebSocketURL is the wss:// URL of the stream.
