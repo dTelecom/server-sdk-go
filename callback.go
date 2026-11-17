@@ -82,6 +82,9 @@ type RoomCallback struct {
 	OnRoomMetadataChanged     func(metadata string)
 	OnReconnecting            func()
 	OnReconnected             func()
+	// OnServerDataReceived gets data messages sent by a server (room service SendData), which
+	// have no sender participant. topic is empty when none was set.
+	OnServerDataReceived func(data []byte, topic string)
 
 	// participant events are sent to the room as well
 	ParticipantCallback
@@ -99,6 +102,7 @@ func NewRoomCallback() *RoomCallback {
 		OnRoomMetadataChanged:     func(metadata string) {},
 		OnReconnecting:            func() {},
 		OnReconnected:             func() {},
+		OnServerDataReceived:      func(data []byte, topic string) {},
 	}
 }
 
@@ -127,6 +131,9 @@ func (cb *RoomCallback) Merge(other *RoomCallback) {
 	}
 	if other.OnReconnected != nil {
 		cb.OnReconnected = other.OnReconnected
+	}
+	if other.OnServerDataReceived != nil {
+		cb.OnServerDataReceived = other.OnServerDataReceived
 	}
 
 	cb.ParticipantCallback.Merge(&other.ParticipantCallback)

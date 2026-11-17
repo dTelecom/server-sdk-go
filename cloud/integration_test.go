@@ -120,6 +120,11 @@ func joinBot(t *testing.T, tok *cloud.ParticipantToken) *bot {
 		b.data = append(b.data, string(data))
 		b.mu.Unlock()
 	}
+	cb.OnServerDataReceived = func(data []byte, topic string) {
+		b.mu.Lock()
+		b.data = append(b.data, "server:"+topic+":"+string(data))
+		b.mu.Unlock()
+	}
 	cb.OnDisconnected = func() { b.goneOnce.Do(func() { close(b.gone) }) }
 	start := time.Now()
 	room, err := lksdk.ConnectToRoomWithToken([]string{tok.WsURL}, tok.Token, cb)
@@ -185,13 +190,28 @@ func TestLiveRoomsAndBot(t *testing.T) {
 		}
 		return nil
 	})
-	// The node accepts server data. The root bot client (v1.0.15) drops messages without a sender
-	// participant, so alice does not see it; that is a bot-client limitation.
+	// Server data has no sender participant; the bot gets it through OnServerDataReceived.
 	if err := rs.SendData(ctx, roomName, []byte("from-server"), cloud.DataReliable, cloud.SendDataOptions{Topic: "t"}); err != nil {
 		t.Fatalf("SendData: %v", err)
 	}
-	time.Sleep(2 * time.Second)
-	t.Logf("server data accepted by the node; Go bot received it: %v", alice.received("from-server"))
+	eventually(t, 10*time.Second, "alice receives server data", func() error {
+		if !alice.received("server:t:from-server") {
+			return errors.New("not yet")
+		}
+		return nil
+	})
+
+	// bob's token has canPublish false: publishing fails at once instead of waiting.
+	bobTrack, err := lksdk.NewLocalFileTrack(oggPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	start := time.Now()
+	_, err = bob.room.LocalParticipant.PublishTrack(bobTrack, &lksdk.TrackPublicationOptions{Name: "nope"})
+	if !errors.Is(err, lksdk.ErrPublishNotPermitted) || time.Since(start) > time.Second {
+		t.Fatalf("publish without canPublish: %v after %s", err, time.Since(start))
+	}
+	t.Logf("publish without canPublish: %v after %s", err, time.Since(start).Round(time.Millisecond))
 
 	// Room service.
 	var ps []cloud.ParticipantInfo

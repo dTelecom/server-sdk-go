@@ -39,6 +39,9 @@ func (p *LocalParticipant) PublishTrack(track webrtc.TrackLocal, opts *TrackPubl
 			opts.Source = livekit.TrackSource_MICROPHONE
 		}
 	}
+	if err := p.checkPublishPermission(opts.Source); err != nil {
+		return nil, err
+	}
 
 	pub := NewLocalTrackPublication(kind, track, opts.Name, p.engine.client)
 	pub.OnRttUpdate(func(rtt uint32) {
@@ -130,6 +133,9 @@ func (p *LocalParticipant) PublishSimulcastTrack(tracks []*LocalSampleTrack, opt
 	// default sources, since clients generally look for camera/mic
 	if opts.Source == livekit.TrackSource_UNKNOWN {
 		opts.Source = livekit.TrackSource_CAMERA
+	}
+	if err := p.checkPublishPermission(opts.Source); err != nil {
+		return nil, err
 	}
 
 	mainTrack := tracks[len(tracks)-1]
@@ -299,6 +305,30 @@ func (p *LocalParticipant) SetMetadata(metadata string) {
 	_ = p.engine.client.SendUpdateParticipantMetadata(&livekit.UpdateParticipantMetadata{
 		Metadata: metadata,
 	})
+}
+
+// checkPublishPermission fails at once when the participant may not publish a track from source:
+// the node drops such a request without an answer, so waiting would only time out.
+func (p *LocalParticipant) checkPublishPermission(source livekit.TrackSource) error {
+	p.lock.RLock()
+	info := p.info
+	p.lock.RUnlock()
+	if info == nil || info.Permission == nil {
+		return nil
+	}
+	perm := info.Permission
+	if !perm.CanPublish {
+		return ErrPublishNotPermitted
+	}
+	if len(perm.CanPublishSources) > 0 {
+		for _, s := range perm.CanPublishSources {
+			if s == source {
+				return nil
+			}
+		}
+		return ErrPublishNotPermitted
+	}
+	return nil
 }
 
 func (p *LocalParticipant) updateInfo(info *livekit.ParticipantInfo) {
