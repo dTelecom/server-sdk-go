@@ -1,14 +1,11 @@
-<!--BEGIN_BANNER_IMAGE-->
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="/.github/banner_dark.png">
-    <source media="(prefers-color-scheme: light)" srcset="/.github/banner_light.png">
-    <img style="width:100%;" alt="The LiveKit icon, the name of the repository and some sample code in the background." src="/.github/banner_light.png">
-  </picture>
-  <!--END_BANNER_IMAGE-->
+# dTelecom Go server SDK
 
-# LiveKit Go SDK
+Use this SDK from your Go backend with [dTelecom Cloud](https://cloud.dtelecom.org): participant tokens,
+room administration, webhooks and the hosted AI services, in the `cloud` package.
 
-<!--BEGIN_DESCRIPTION-->Use this SDK to manage <a href="https://livekit.io/">LiveKit</a> rooms and create access tokens from your Go backend.<!--END_DESCRIPTION-->
+**Documentation:** [docs.dtelecom.org](https://docs.dtelecom.org), see the
+[server SDK reference](https://docs.dtelecom.org/reference/server-sdk/) and the
+[quickstart](https://docs.dtelecom.org/quickstart/).
 
 ## dTelecom Cloud
 
@@ -17,7 +14,7 @@ participant tokens, room administration, live speech sessions, file transcriptio
 translation, vision, moderation and node webhooks. It needs Go 1.18+ and no `replace` directive.
 
 ```shell
-go get github.com/dtelecom/server-sdk-go@v1.1.0
+go get github.com/dtelecom/server-sdk-go@latest
 ```
 
 ```go
@@ -318,7 +315,7 @@ The SDK takes care of sending the samples to the room.
 ## Receiving webhooks
 
 The Go SDK helps you to verify and decode webhook callbacks to ensure their authenticity.
-See [webhooks guide](https://docs.livekit.io/guides/webhooks) for configuration.
+For dTelecom Cloud webhooks see [Webhooks](https://docs.dtelecom.org/rooms/webhooks/) and the `cloud` package above.
 
 ```go
 import (
@@ -342,15 +339,3 @@ func ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// consume WebhookEvent
 }
 ```
-
-<!--BEGIN_REPO_NAV-->
-<br/><table>
-<thead><tr><th colspan="2">LiveKit Ecosystem</th></tr></thead>
-<tbody>
-<tr><td>Client SDKs</td><td><a href="https://github.com/livekit/components-js">Components</a> · <a href="https://github.com/livekit/client-sdk-js">JavaScript</a> · <a href="https://github.com/livekit/client-sdk-rust">Rust</a> · <a href="https://github.com/livekit/client-sdk-swift">iOS/macOS</a> · <a href="https://github.com/livekit/client-sdk-android">Android</a> · <a href="https://github.com/livekit/client-sdk-flutter">Flutter</a> · <a href="https://github.com/livekit/client-sdk-unity-web">Unity (web)</a> · <a href="https://github.com/livekit/client-sdk-react-native">React Native (beta)</a></td></tr><tr></tr>
-<tr><td>Server SDKs</td><td><a href="https://github.com/livekit/server-sdk-js">Node.js</a> · <b>Golang</b> · <a href="https://github.com/livekit/server-sdk-ruby">Ruby</a> · <a href="https://github.com/livekit/server-sdk-kotlin">Java/Kotlin</a> · <a href="https://github.com/agence104/livekit-server-sdk-php">PHP (community)</a> · <a href="https://github.com/tradablebits/livekit-server-sdk-python">Python (community)</a></td></tr><tr></tr>
-<tr><td>Services</td><td><a href="https://github.com/livekit/livekit">Livekit server</a> · <a href="https://github.com/livekit/egress">Egress</a> · <a href="https://github.com/livekit/ingress">Ingress</a></td></tr><tr></tr>
-<tr><td>Resources</td><td><a href="https://docs.livekit.io">Docs</a> · <a href="https://github.com/livekit-examples">Example apps</a> · <a href="https://livekit.io/cloud">Cloud</a> · <a href="https://docs.livekit.io/oss/deployment">Self-hosting</a> · <a href="https://github.com/livekit/livekit-cli">CLI</a></td></tr>
-</tbody>
-</table>
-<!--END_REPO_NAV-->
