@@ -120,15 +120,19 @@ type ParticipantToken struct {
 	Token string
 	// WsURL is the node URL (wss://...) for the client SDK.
 	WsURL string
-	// SessionID identifies the session for ExtendToken and for linking AI usage to it.
+	// SessionID identifies the session for ExtendToken, GetSession and for linking AI usage to it.
 	SessionID string
+	// Region is where the chosen node is: its city, else its country; empty when unknown.
+	Region    string
 	ExpiresAt time.Time
 }
 
 // ExtendedToken is a token for the whole remaining time of an extended session.
 type ExtendedToken struct {
-	Token     string
-	WsURL     string
+	Token string
+	WsURL string
+	// Region is the session's node location, as in CreateToken.
+	Region    string
 	ExpiresAt time.Time
 }
 
@@ -189,12 +193,13 @@ func (c *Client) CreateToken(ctx context.Context, opts TokenOptions) (*Participa
 		SessionID string    `json:"session_id"`
 		Token     string    `json:"token"`
 		WsURL     string    `json:"ws_url"`
+		Region    string    `json:"region"`
 		ExpiresAt time.Time `json:"expires_at"`
 	}
 	if err := c.http.json(ctx, http.MethodPost, "/v1/webrtc/token", body, nil, &res); err != nil {
 		return nil, err
 	}
-	return &ParticipantToken{Token: res.Token, WsURL: res.WsURL, SessionID: res.SessionID, ExpiresAt: res.ExpiresAt}, nil
+	return &ParticipantToken{Token: res.Token, WsURL: res.WsURL, SessionID: res.SessionID, Region: res.Region, ExpiresAt: res.ExpiresAt}, nil
 }
 
 // ExtendToken adds time to a session and returns a token for the whole remaining time. The
@@ -212,13 +217,14 @@ func (c *Client) ExtendToken(ctx context.Context, sessionID string, additional t
 	var res struct {
 		Token        string    `json:"token"`
 		WsURL        string    `json:"ws_url"`
+		Region       string    `json:"region"`
 		NewExpiresAt time.Time `json:"new_expires_at"`
 	}
 	body := map[string]any{"session_id": sessionID, "additional_minutes": minutes}
 	if err := c.http.json(ctx, http.MethodPost, "/v1/webrtc/token/extend", body, nil, &res); err != nil {
 		return nil, err
 	}
-	return &ExtendedToken{Token: res.Token, WsURL: res.WsURL, ExpiresAt: res.NewExpiresAt}, nil
+	return &ExtendedToken{Token: res.Token, WsURL: res.WsURL, Region: res.Region, ExpiresAt: res.NewExpiresAt}, nil
 }
 
 // AdminToken mints a 10-minute room admin token and lists the nodes hosting the room.

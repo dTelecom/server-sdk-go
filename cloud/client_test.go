@@ -17,6 +17,7 @@ type fakeCloud struct {
 	srv     *httptest.Server
 	method  string
 	path    string
+	query   string
 	headers http.Header
 	body    map[string]any
 	raw     []byte
@@ -26,7 +27,7 @@ func newFakeCloud(t *testing.T, status int, response string, headers map[string]
 	t.Helper()
 	f := &fakeCloud{t: t}
 	f.srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		f.method, f.path, f.headers = r.Method, r.URL.Path, r.Header.Clone()
+		f.method, f.path, f.query, f.headers = r.Method, r.URL.Path, r.URL.RawQuery, r.Header.Clone()
 		f.raw, _ = io.ReadAll(r.Body)
 		f.body = nil
 		if strings.HasPrefix(r.Header.Get("Content-Type"), "application/json") {
@@ -91,7 +92,7 @@ func TestDurationMinutes(t *testing.T) {
 }
 
 func TestCreateToken(t *testing.T) {
-	f, c := newFakeCloud(t, 200, `{"session_id":"s1","token":"jwt","ws_url":"wss://n1","expires_at":"2026-11-17T10:00:00Z"}`, nil)
+	f, c := newFakeCloud(t, 200, `{"session_id":"s1","token":"jwt","ws_url":"wss://n1","region":"Frankfurt","expires_at":"2026-11-17T10:00:00Z"}`, nil)
 	tok, err := c.CreateToken(context.Background(), TokenOptions{
 		Room: "demo", Identity: "alice", Name: "Alice", ClientIP: "1.2.3.4",
 		WebhookURLs: []string{"https://hook"},
@@ -114,7 +115,7 @@ func TestCreateToken(t *testing.T) {
 	if len(grants) != 2 || grants["can_subscribe"] != false || grants["room_admin"] != true {
 		t.Fatalf("grants %v", grants)
 	}
-	if tok.Token != "jwt" || tok.WsURL != "wss://n1" || tok.SessionID != "s1" || !tok.ExpiresAt.Equal(time.Date(2026, 11, 17, 10, 0, 0, 0, time.UTC)) {
+	if tok.Token != "jwt" || tok.WsURL != "wss://n1" || tok.SessionID != "s1" || tok.Region != "Frankfurt" || !tok.ExpiresAt.Equal(time.Date(2026, 11, 17, 10, 0, 0, 0, time.UTC)) {
 		t.Fatalf("token %+v", tok)
 	}
 }
@@ -133,12 +134,12 @@ func TestCreateTokenRoundsTTL(t *testing.T) {
 }
 
 func TestExtendAndAdminToken(t *testing.T) {
-	f, c := newFakeCloud(t, 200, `{"token":"t2","ws_url":"wss://n1","new_expires_at":"2026-11-17T11:00:00Z"}`, nil)
+	f, c := newFakeCloud(t, 200, `{"token":"t2","ws_url":"wss://n1","region":"Frankfurt","new_expires_at":"2026-11-17T11:00:00Z"}`, nil)
 	ext, err := c.ExtendToken(context.Background(), "s1", 30*time.Minute)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if f.path != "/v1/webrtc/token/extend" || f.body["session_id"] != "s1" || f.body["additional_minutes"] != float64(30) || ext.Token != "t2" || ext.ExpiresAt.IsZero() {
+	if f.path != "/v1/webrtc/token/extend" || f.body["session_id"] != "s1" || f.body["additional_minutes"] != float64(30) || ext.Token != "t2" || ext.Region != "Frankfurt" || ext.ExpiresAt.IsZero() {
 		t.Fatalf("extend %s %v %+v", f.path, f.body, ext)
 	}
 
