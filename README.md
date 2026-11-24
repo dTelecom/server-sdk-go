@@ -29,10 +29,14 @@ tok, err := c.CreateToken(ctx, cloud.TokenOptions{
 	Identity: "alice",
 	ClientIP: userIP, // picks the node nearest to the user
 })
-// give tok.Token and tok.WsURL to the client
+// give tok.Token and tok.WsURL to the client; tok.Region is the node's city or country
 
 // Extend before tok.ExpiresAt, or the participant is removed about a minute after it.
 ext, err := c.ExtendToken(ctx, tok.SessionID, 30*time.Minute)
+
+// What a session was charged (set when it ends: check Final), or a whole room's sessions.
+s, err := c.GetSession(ctx, tok.SessionID)
+list, err := c.ListSessions(ctx, "demo", cloud.ListSessionsOptions{Since: callStart})
 ```
 
 Errors from the cloud are `*cloud.APIError` with `Status`, `Code`, `RetryAfter`, `ID` and `Detail`:
