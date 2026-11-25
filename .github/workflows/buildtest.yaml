@@ -1,10 +1,7 @@
 name: Go SDK tests
 
 on:
-  push:
-    branches: [dtelecom-db]
-  pull_request:
-    branches: [dtelecom-db]
+  workflow_call:
   workflow_dispatch:
     inputs:
       live:

@@ -1,0 +1,14 @@
+name: Go SDK consumer CI
+
+on:
+  push:
+    branches: [dtelecom-db]
+  pull_request:
+    branches: [dtelecom-db]
+
+permissions:
+  contents: read
+
+jobs:
+  consumer:
+    uses: ./.github/workflows/buildtest.yaml
