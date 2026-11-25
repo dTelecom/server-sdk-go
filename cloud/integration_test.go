@@ -19,6 +19,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"testing"
@@ -225,6 +226,22 @@ func TestLiveRoomsAndBot(t *testing.T) {
 		}
 		return nil
 	})
+	// Exercise the public CLI against the same room and assert its output.
+	var cmd *exec.Cmd
+	if binary := os.Getenv("DTELECOM_ROOM_MANAGEMENT_BIN"); binary != "" {
+		cmd = exec.CommandContext(ctx, binary, roomName)
+	} else {
+		cmd = exec.CommandContext(ctx, "go", "run", "github.com/dtelecom/server-sdk-go/examples/room-management", roomName)
+	}
+	output, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("room-management command failed: %v", err)
+	}
+	identities := strings.Fields(string(output))
+	sort.Strings(identities)
+	if len(identities) != 2 || identities[0] != "alice" || identities[1] != "bob" {
+		t.Fatal("room-management command did not list both participants")
+	}
 	var trackSID string
 	eventually(t, 15*time.Second, "alice's audio track on the node", func() error {
 		p, err := rs.GetParticipant(ctx, roomName, "alice")
@@ -275,8 +292,11 @@ func TestLiveRoomsAndBot(t *testing.T) {
 	}
 
 	ext, err := c.ExtendToken(ctx, aliceTok.SessionID, 10*time.Minute)
-	if err != nil || !ext.ExpiresAt.After(aliceTok.ExpiresAt) {
-		t.Fatalf("ExtendToken %+v %v", ext, err)
+	if err != nil {
+		t.Fatalf("ExtendToken: %v", err)
+	}
+	if ext == nil || !ext.ExpiresAt.After(aliceTok.ExpiresAt) {
+		t.Fatal("ExtendToken did not extend the session expiration")
 	}
 
 	if err := rs.RemoveParticipant(ctx, roomName, "bob"); err != nil {

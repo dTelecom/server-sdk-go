@@ -1,60 +1,76 @@
-name: Test
+name: Go SDK tests
 
 on:
-  workflow_dispatch:
   push:
-    branches: [ main ]
+    branches: [dtelecom-db]
   pull_request:
-    branches: [ main ]
+    branches: [dtelecom-db]
+  workflow_dispatch:
+    inputs:
+      live:
+        description: Run the two-participant Cloud room test
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
 
 jobs:
   test:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        go: ['1.23.8', stable]
     steps:
-      - uses: actions/checkout@v3
-      - uses: actions/cache@v3
+      - uses: actions/checkout@v4
         with:
-          path: |
-            ~/go/pkg/mod
-            ~/go/bin
-            ~/.cache
-          key: server-sdk-go
-
-      - name: Set up Go
-        uses: actions/setup-go@v4
+          persist-credentials: false
+      - uses: actions/setup-go@v5
         with:
-          go-version: 1.19
-
-      - name: Set up gotestfmt
-        run: go install github.com/gotesttools/gotestfmt/v2/cmd/gotestfmt@latest
-
-      - name: Replace mutexes
+          go-version: ${{ matrix.go }}
+      - name: Build, vet and test the SDK
         run: |
-          go get github.com/sasha-s/go-deadlock
-          grep -rl sync.Mutex . | grep .go$ | xargs sed -i 's/sync\.Mutex/deadlock\.Mutex/g'
-          grep -rl sync.RWMutex . | grep .go$ | xargs sed -i 's/sync\.RWMutex/deadlock\.RWMutex/g'
-          go install golang.org/x/tools/cmd/goimports@latest
-          grep -rl deadlock.Mutex . | grep .go$ | xargs goimports -w
-          grep -rl deadlock.RWMutex . | grep .go$ | xargs goimports -w
-          go mod tidy
+          go build -mod=readonly ./...
+          go vet -mod=readonly ./...
+          go test -mod=readonly -count=1 ./...
+      - name: Test a downstream consumer
+        run: scripts/prepare-consumer.sh "$RUNNER_TEMP/consumer"
 
-      - name: Mage Build
-        uses: magefile/mage-action@v2
+  live:
+    needs: test
+    if: github.event_name == 'workflow_dispatch' && inputs.live && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+    environment: sdk-live-tests
+    timeout-minutes: 20
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
         with:
-          version: latest
-          args: build
-
-      - name: Static Check
-        uses: dominikh/staticcheck-action@v1.3.0
+          persist-credentials: false
+      - uses: actions/setup-go@v5
         with:
-          version: "v0.3.3"
-          install-go: false
-
-      - name: Mage Test
-        uses: magefile/mage-action@v2
-        with:
-          version: latest
-          args: test
+          go-version: '1.23.8'
+      - name: Prepare the downstream consumer and audio fixture tools
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y ffmpeg
+          scripts/prepare-consumer.sh "$RUNNER_TEMP/consumer"
+      - name: Exercise the two-party call and room administration
         env:
-          TestFlags: "-v"
-
+          DTELECOM_CLOUD_URL: ${{ secrets.DTELECOM_CLOUD_URL }}
+          DTELECOM_API_KEY: ${{ secrets.DTELECOM_API_KEY }}
+          DTELECOM_API_SECRET: ${{ secrets.DTELECOM_API_SECRET }}
+        run: |
+          : "${DTELECOM_CLOUD_URL:?Missing test Cloud URL}" "${DTELECOM_API_KEY:?Missing test API key}" "${DTELECOM_API_SECRET:?Missing test API secret}"
+          command -v ffmpeg > /dev/null
+          cd "$RUNNER_TEMP/consumer"
+          export DTELECOM_ROOM_MANAGEMENT_BIN="$PWD/room-management"
+          # Underlying transports may include credentials in error responses. Keep raw logs private.
+          umask 077
+          trap 'rm -f live.log' EXIT
+          if ! ./live-room.test -test.v -test.run '^TestLiveRoomsAndBot$' -test.timeout 3m > live.log 2>&1 ||
+             ! grep -q '^--- PASS: TestLiveRoomsAndBot ' live.log; then
+            awk 'match($0, /(consumer|integration)_test\.go:[0-9]+/) { print substr($0, RSTART, RLENGTH) }' live.log
+            echo 'Cloud room test failed.'
+            exit 1
+          fi
+          echo 'Two participants joined, exchanged data and exercised the room-management example and administration.'

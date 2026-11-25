@@ -124,7 +124,7 @@ logging:
 
 	fmt.Println("testing...")
 	testflags := os.Getenv("TestFlags")
-	return run(map[string]string{"LIVEKIT_KEYS": testApiKey}, `go test -race `+testflags)
+	return run(map[string]string{"LIVEKIT_KEYS": testApiKey}, `go test -race -tags=legacy_integration `+testflags)
 }
 
 func run(env map[string]string, commands ...string) error {
