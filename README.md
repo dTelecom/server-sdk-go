@@ -45,27 +45,38 @@ Errors from the cloud are `*cloud.APIError` with `Status`, `Code`, `RetryAfter`,
 if cloud.IsCode(err, "concurrency_limit") { ... }
 ```
 
-### Rooms
+### Manage a live room
 
-```go
-rs := c.RoomService() // keep it: it caches admin tokens
-participants, err := rs.ListParticipants(ctx, "demo")
-err = rs.RemoveParticipant(ctx, "demo", "bob")
-_, err = rs.MutePublishedTrack(ctx, "demo", "alice", trackSID, true)
-err = rs.SendData(ctx, "demo", []byte("hello"), cloud.DataReliable, cloud.SendDataOptions{Topic: "chat"})
-err = rs.DeleteRoom(ctx, "demo")
+The first participant to join starts the room. Obtain a room service with `c.RoomService()` and
+pass the room name to `ListParticipants(ctx, roomName)`. The service locates the nodes serving that room and caches its admin tokens.
+To list participants, set your Cloud credentials in the environment and run the
+[room-management example](examples/room-management/main.go) from this checkout while the call is active.
+
+```shell
+go run ./examples/room-management my-room
 ```
 
-Calls on a room nobody has joined return `cloud.ErrRoomNotLive`; a node's refusal is a `*cloud.NodeAPIError`.
+The example prints participant identities. If the room has no serving nodes, the list is empty.
+The service also supports looking up a participant, muting a published track, sending data,
+removing a participant and ending the call. For an application that needs a room directory, keep
+the room names in your backend. See the [room-management guide](https://docs.dtelecom.org/rooms/manage-rooms/).
 
-### A Go bot in a Cloud room
+### Join a Cloud room from Go
 
-The bot client in this module joins with a Cloud token:
+Use the root package when your process is itself a WebRTC participant. Import it as
+`lksdk "github.com/dtelecom/server-sdk-go"` alongside the `cloud` package.
 
 ```go
-tok, _ := c.CreateToken(ctx, cloud.TokenOptions{Room: "demo", Identity: "bot"})
-room, err := lksdk.ConnectToRoomWithToken([]string{tok.WsURL}, tok.Token, lksdk.NewRoomCallback())
+func join(ctx context.Context, client *cloud.Client, roomName, identity string) (*lksdk.Room, error) {
+    token, err := client.CreateToken(ctx, cloud.TokenOptions{Room: roomName, Identity: identity})
+    if err != nil {
+        return nil, err
+    }
+    return lksdk.ConnectToRoomWithToken([]string{token.WsURL}, token.Token, lksdk.NewRoomCallback())
+}
 ```
+
+Call `room.Disconnect()` when the participant leaves.
 
 ### AI services
 
@@ -113,134 +124,6 @@ http.HandleFunc("/webhook", func(w http.ResponseWriter, r *http.Request) {
 ```shell
 DTELECOM_API_KEY=... DTELECOM_API_SECRET=... DTELECOM_CLOUD_URL=https://... \
   go test -tags integration -run TestLive -v ./cloud
-```
-
-The rest of this README covers the self-hosted API: tokens signed locally with a node key, and the
-bot client.
-
-## Installation
-
-```shell
-go get github.com/dtelecom/server-sdk-go
-```
-
-Note: since v1.0 release, this package requires Go 1.18+ in order to build.
-
-## Token creation
-
-```go
-import (
-	"time"
-
-	lksdk "github.com/dtelecom/server-sdk-go"
-	"github.com/dtelecom/protocol/auth"
-)
-
-func getJoinToken(apiKey, apiSecret, room, identity string) (string, error) {
-	at := auth.NewAccessToken(apiKey, apiSecret)
-	grant := &auth.VideoGrant{
-		RoomJoin: true,
-		Room:     room,
-	}
-	at.AddGrant(grant).
-		SetIdentity(identity).
-		SetValidFor(time.Hour)
-
-	return at.ToJWT()
-}
-```
-
-## RoomService API
-
-RoomService gives you complete control over rooms and participants within them. It includes selective track subscriptions as well as moderation capabilities.
-
-```go
-import (
-	lksdk "github.com/dtelecom/server-sdk-go"
-	livekit "github.com/dtelecom/protocol/livekit"
-)
-
-func main() {
-	host := "host"
-	apiKey := "key"
-	apiSecret := "secret"
-
-	roomName := "myroom"
-	identity := "participantIdentity"
-
-    roomClient := lksdk.NewRoomServiceClient(host, apiKey, apiSecret)
-
-    // create a new room
-    room, _ := roomClient.CreateRoom(context.Background(), &livekit.CreateRoomRequest{
-		Name: roomName,
-	})
-
-    // list rooms
-    res, _ := roomClient.ListRooms(context.Background(), &livekit.ListRoomsRequest{})
-
-    // terminate a room and cause participants to leave
-    roomClient.DeleteRoom(context.Background(), &livekit.DeleteRoomRequest{
-		Room: roomId,
-	})
-
-    // list participants in a room
-    res, _ := roomClient.ListParticipants(context.Background(), &livekit.ListParticipantsRequest{
-		Room: roomName,
-	})
-
-    // disconnect a participant from room
-    roomClient.RemoveParticipant(context.Background(), &livekit.RoomParticipantIdentity{
-		Room:     roomName,
-		Identity: identity,
-	})
-
-    // mute/unmute participant's tracks
-    roomClient.MutePublishedTrack(context.Background(), &livekit.MuteRoomTrackRequest{
-		Room:     roomName,
-		Identity: identity,
-		TrackSid: "track_sid",
-		Muted:    true,
-	})
-}
-```
-
-## Interacting as a participant
-
-The Participant SDK gives you access programmatic access as a client enabling you to publish and record audio/video/data to the room.
-
-```go
-import (
-  lksdk "github.com/dtelecom/server-sdk-go"
-)
-
-func main() {
-  host := "<host>"
-  apiKey := "api-key"
-  apiSecret := "api-secret"
-  roomName := "myroom"
-  identity := "botuser"
-  roomCB := &lksdk.RoomCallback{
-	ParticipantCallback: lksdk.ParticipantCallback{
-	  OnTrackSubscribed: trackSubscribed
-  	},
-  }
-  room, err := lksdk.ConnectToRoom(host, lksdk.ConnectInfo{
-  	APIKey:              apiKey,
-  	APISecret:           apiSecret,
-  	RoomName:            roomName,
-  	ParticipantIdentity: identity,
-  }, roomCB)
-  if err != nil {
-  	panic(err)
-  }
-
-  ...
-  room.Disconnect()
-}
-
-func trackSubscribed(track *webrtc.TrackRemote, publication *lksdk.RemoteTrackPublication, rp *lksdk.RemoteParticipant) {
-
-}
 ```
 
 ## Publishing tracks to Room
@@ -315,31 +198,3 @@ if _, err = room.LocalParticipant.PublishTrack(track, &lksdk.TrackPublicationOpt
 In order to publish from non-file sources, you will have to implement your own `SampleProvider`, that could provide frames of data with a `NextSample` method.
 
 The SDK takes care of sending the samples to the room.
-
-## Receiving webhooks
-
-The Go SDK helps you to verify and decode webhook callbacks to ensure their authenticity.
-For dTelecom Cloud webhooks see [Webhooks](https://docs.dtelecom.org/rooms/webhooks/) and the `cloud` package above.
-
-```go
-import (
-	"github.com/dtelecom/protocol/auth"
-	"github.com/dtelecom/protocol/livekit"
-	"github.com/dtelecom/protocol/webhook"
-)
-
-var authProvider = auth.NewSimpleKeyProvider(
-	apiKey, apiSecret,
-)
-
-func ServeHTTP(w http.ResponseWriter, r *http.Request) {
-  // event is a livekit.WebhookEvent{} object
-	event, err := webhook.ReceiveWebhookEvent(r, authProvider)
-	if err != nil {
-		// could not validate, handle error
-		return
-	}
-
-	// consume WebhookEvent
-}
-```
