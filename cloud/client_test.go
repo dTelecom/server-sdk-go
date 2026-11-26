@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -92,7 +93,7 @@ func TestDurationMinutes(t *testing.T) {
 }
 
 func TestCreateToken(t *testing.T) {
-	f, c := newFakeCloud(t, 200, `{"session_id":"s1","token":"jwt","ws_url":"wss://n1","region":"Frankfurt","expires_at":"2026-11-17T10:00:00Z"}`, nil)
+	f, c := newFakeCloud(t, 200, `{"session_id":"s1","token":"jwt","ws_url":"wss://n1","fallback_urls":["wss://n1/","wss://n2","","wss://n3","wss://n2"],"region":"Frankfurt","expires_at":"2026-11-17T10:00:00Z"}`, nil)
 	tok, err := c.CreateToken(context.Background(), TokenOptions{
 		Room: "demo", Identity: "alice", Name: "Alice", ClientIP: "1.2.3.4",
 		WebhookURLs: []string{"https://hook"},
@@ -115,7 +116,7 @@ func TestCreateToken(t *testing.T) {
 	if len(grants) != 2 || grants["can_subscribe"] != false || grants["room_admin"] != true {
 		t.Fatalf("grants %v", grants)
 	}
-	if tok.Token != "jwt" || tok.WsURL != "wss://n1" || tok.SessionID != "s1" || tok.Region != "Frankfurt" || !tok.ExpiresAt.Equal(time.Date(2026, 11, 17, 10, 0, 0, 0, time.UTC)) {
+	if !reflect.DeepEqual(tok.FallbackURLs, []string{"wss://n1", "wss://n2", "wss://n3"}) || tok.Token != "jwt" || tok.WsURL != "wss://n1" || tok.SessionID != "s1" || tok.Region != "Frankfurt" || !tok.ExpiresAt.Equal(time.Date(2026, 11, 17, 10, 0, 0, 0, time.UTC)) {
 		t.Fatalf("token %+v", tok)
 	}
 }
@@ -139,7 +140,7 @@ func TestExtendAndAdminToken(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if f.path != "/v1/webrtc/token/extend" || f.body["session_id"] != "s1" || f.body["additional_minutes"] != float64(30) || ext.Token != "t2" || ext.Region != "Frankfurt" || ext.ExpiresAt.IsZero() {
+	if f.path != "/v1/webrtc/token/extend" || f.body["session_id"] != "s1" || f.body["additional_minutes"] != float64(30) || !reflect.DeepEqual(ext.FallbackURLs, []string{"wss://n1"}) || ext.Token != "t2" || ext.Region != "Frankfurt" || ext.ExpiresAt.IsZero() {
 		t.Fatalf("extend %s %v %+v", f.path, f.body, ext)
 	}
 
@@ -150,6 +151,19 @@ func TestExtendAndAdminToken(t *testing.T) {
 	}
 	if f2.path != "/v1/webrtc/admin-token" || f2.body["room_name"] != "demo" || adm.APIURLs == nil || len(adm.APIURLs) != 0 {
 		t.Fatalf("admin %s %v %+v", f2.path, f2.body, adm)
+	}
+}
+
+func TestTokenCandidatesOnLegacyCreateAndRankedExtend(t *testing.T) {
+	_, c := newFakeCloud(t, 200, `{"ws_url":"wss://n1"}`, nil)
+	token, err := c.CreateToken(context.Background(), TokenOptions{Room: "r", Identity: "i"})
+	if err != nil || !reflect.DeepEqual(token.FallbackURLs, []string{"wss://n1"}) {
+		t.Fatalf("legacy create candidates: %+v, %v", token, err)
+	}
+	_, c = newFakeCloud(t, 200, `{"ws_url":"wss://n1","fallback_urls":["wss://n2","wss://n1","wss://n2","wss://n3"]}`, nil)
+	extended, err := c.ExtendToken(context.Background(), "s1", time.Minute)
+	if err != nil || !reflect.DeepEqual(extended.FallbackURLs, []string{"wss://n1", "wss://n2", "wss://n3"}) {
+		t.Fatalf("extended candidates: %+v, %v", extended, err)
 	}
 }
 

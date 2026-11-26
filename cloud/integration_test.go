@@ -15,6 +15,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"os"
 	"os/exec"
@@ -128,11 +129,11 @@ func joinBot(t *testing.T, tok *cloud.ParticipantToken) *bot {
 	}
 	cb.OnDisconnected = func() { b.goneOnce.Do(func() { close(b.gone) }) }
 	start := time.Now()
-	room, err := lksdk.ConnectToRoomWithToken([]string{tok.WsURL}, tok.Token, cb)
+	room, err := lksdk.ConnectToRoomWithToken(tok.FallbackURLs, tok.Token, cb)
 	if err != nil {
 		t.Fatalf("bot join %s: %v", tok.WsURL, err)
 	}
-	t.Logf("bot %s joined %s in %s", room.LocalParticipant.Identity(), tok.WsURL, time.Since(start).Round(time.Millisecond))
+	t.Logf("bot %s joined in %s (issued primary %s)", room.LocalParticipant.Identity(), time.Since(start).Round(time.Millisecond), tok.WsURL)
 	b.room = room
 	t.Cleanup(room.Disconnect)
 	return b
@@ -166,6 +167,15 @@ func TestLiveRoomsAndBot(t *testing.T) {
 	}
 	t.Logf("tokens: %s (expires %s), node %s", aliceTok.SessionID, aliceTok.ExpiresAt.Format(time.RFC3339), aliceTok.WsURL)
 
+	// Make the first node unavailable only for this client. TLS cannot send the token
+	// to a closed local port; the next request connects to the actual Cloud node.
+	unavailable, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	localURL := "wss://" + unavailable.Addr().String()
+	unavailable.Close()
+	aliceTok.FallbackURLs = append([]string{localURL}, aliceTok.FallbackURLs...)
 	alice := joinBot(t, aliceTok)
 	bob := joinBot(t, bobTok)
 

@@ -6,7 +6,7 @@
 //
 //	c, err := cloud.New(cloud.Options{}) // DTELECOM_API_KEY, DTELECOM_API_SECRET, DTELECOM_CLOUD_URL
 //	t, err := c.CreateToken(ctx, cloud.TokenOptions{Room: "demo", Identity: "alice"})
-//	// give t.Token and t.WsURL to the client SDK
+//	// give t.Token and t.FallbackURLs to the client SDK
 package cloud
 
 import (
@@ -16,6 +16,8 @@ import (
 	"os"
 	"strings"
 	"time"
+
+	"github.com/dtelecom/server-sdk-go/internal/nodeurls"
 )
 
 const defaultTokenTTL = 6 * time.Hour
@@ -120,6 +122,8 @@ type ParticipantToken struct {
 	Token string
 	// WsURL is the node URL (wss://...) for the client SDK.
 	WsURL string
+	// FallbackURLs contains WsURL first, followed by distinct alternatives in Cloud preference order.
+	FallbackURLs []string
 	// SessionID identifies the session for ExtendToken, GetSession and for linking AI usage to it.
 	SessionID string
 	// Region is where the chosen node is: its city, else its country; empty when unknown.
@@ -131,6 +135,8 @@ type ParticipantToken struct {
 type ExtendedToken struct {
 	Token string
 	WsURL string
+	// FallbackURLs contains WsURL first, followed by distinct alternatives in Cloud preference order.
+	FallbackURLs []string
 	// Region is the session's node location, as in CreateToken.
 	Region    string
 	ExpiresAt time.Time
@@ -190,16 +196,17 @@ func (c *Client) CreateToken(ctx context.Context, opts TokenOptions) (*Participa
 		body["grants"] = grants
 	}
 	var res struct {
-		SessionID string    `json:"session_id"`
-		Token     string    `json:"token"`
-		WsURL     string    `json:"ws_url"`
-		Region    string    `json:"region"`
-		ExpiresAt time.Time `json:"expires_at"`
+		SessionID    string    `json:"session_id"`
+		Token        string    `json:"token"`
+		WsURL        string    `json:"ws_url"`
+		FallbackURLs []string  `json:"fallback_urls"`
+		Region       string    `json:"region"`
+		ExpiresAt    time.Time `json:"expires_at"`
 	}
 	if err := c.http.json(ctx, http.MethodPost, "/v1/webrtc/token", body, nil, &res); err != nil {
 		return nil, err
 	}
-	return &ParticipantToken{Token: res.Token, WsURL: res.WsURL, SessionID: res.SessionID, Region: res.Region, ExpiresAt: res.ExpiresAt}, nil
+	return &ParticipantToken{Token: res.Token, WsURL: res.WsURL, FallbackURLs: nodeurls.Ordered(res.WsURL, res.FallbackURLs), SessionID: res.SessionID, Region: res.Region, ExpiresAt: res.ExpiresAt}, nil
 }
 
 // ExtendToken adds time to a session and returns a token for the whole remaining time. The
@@ -217,6 +224,7 @@ func (c *Client) ExtendToken(ctx context.Context, sessionID string, additional t
 	var res struct {
 		Token        string    `json:"token"`
 		WsURL        string    `json:"ws_url"`
+		FallbackURLs []string  `json:"fallback_urls"`
 		Region       string    `json:"region"`
 		NewExpiresAt time.Time `json:"new_expires_at"`
 	}
@@ -224,7 +232,7 @@ func (c *Client) ExtendToken(ctx context.Context, sessionID string, additional t
 	if err := c.http.json(ctx, http.MethodPost, "/v1/webrtc/token/extend", body, nil, &res); err != nil {
 		return nil, err
 	}
-	return &ExtendedToken{Token: res.Token, WsURL: res.WsURL, Region: res.Region, ExpiresAt: res.NewExpiresAt}, nil
+	return &ExtendedToken{Token: res.Token, WsURL: res.WsURL, FallbackURLs: nodeurls.Ordered(res.WsURL, res.FallbackURLs), Region: res.Region, ExpiresAt: res.NewExpiresAt}, nil
 }
 
 // AdminToken mints a 10-minute room admin token and lists the nodes hosting the room.

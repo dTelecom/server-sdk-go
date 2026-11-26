@@ -1,13 +1,17 @@
 package lksdk
 
 import (
+	"context"
+	"crypto/x509"
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/gorilla/websocket"
 	"github.com/pion/webrtc/v3"
@@ -26,6 +30,8 @@ type SignalClient struct {
 	isClosed        atomic.Bool
 	isStarted       atomic.Bool
 	pendingResponse *livekit.SignalResponse
+	workerMu        sync.Mutex
+	workerDone      chan struct{}
 
 	OnClose                 func()
 	OnAnswer                func(sd webrtc.SessionDescription)
@@ -48,10 +54,13 @@ func NewSignalClient() *SignalClient {
 }
 
 func (c *SignalClient) Start() {
-	if c.isStarted.Swap(true) {
+	c.workerMu.Lock()
+	defer c.workerMu.Unlock()
+	if c.websocketConn() == nil || c.isClosed.Load() || c.isStarted.Swap(true) {
 		return
 	}
-	go c.readWorker()
+	c.workerDone = make(chan struct{})
+	go c.readWorker(c.workerDone)
 }
 
 func (c *SignalClient) IsStarted() bool {
@@ -59,69 +68,96 @@ func (c *SignalClient) IsStarted() bool {
 }
 
 func (c *SignalClient) Join(urlPrefix string, token string, params *ConnectParams) (*livekit.JoinResponse, error) {
+	return c.join(context.Background(), urlPrefix, token, params, 15*time.Second)
+}
+
+func (c *SignalClient) join(ctx context.Context, urlPrefix, token string, params *ConnectParams, timeout time.Duration) (*livekit.JoinResponse, error) {
 	if urlPrefix == "" {
 		return nil, ErrURLNotProvided
 	}
-	urlPrefix = ToWebsocketURL(urlPrefix)
-	urlSuffix := fmt.Sprintf("/rtc?protocol=%d&sdk=go&version=%s", PROTOCOL, Version)
-
-	if params.AutoSubscribe {
-		urlSuffix += "&auto_subscribe=1"
-	} else {
-		urlSuffix += "&auto_subscribe=0"
+	if params == nil {
+		return nil, ErrInvalidParameter
 	}
-
-	if params.Reconnect {
-		urlSuffix += "&reconnect=1"
-	}
-
-	u, err := url.Parse(urlPrefix + urlSuffix)
-	if err != nil {
-		return nil, err
-	}
-
-	header := newHeaderWithToken(token)
-	conn, _, err := websocket.DefaultDialer.Dial(u.String(), header)
-	if err != nil {
-		// use validate endpoint to get the actual error
-		validateSuffix := strings.Replace(urlSuffix, "/rtc", "/rtc/validate", 1)
-
-		res, err := http.Get(ToHttpURL(urlPrefix) + validateSuffix)
-		if err != nil || res.StatusCode == http.StatusOK {
-			// no specific errors to return if validate succeeds
-			return nil, ErrCannotConnectSignal
-		} else {
-			var errString string
-			switch res.StatusCode {
-			case http.StatusUnauthorized:
-				errString = "unauthorized: "
-			case http.StatusNotFound:
-				errString = "not found: "
-			case http.StatusServiceUnavailable:
-				errString = "unavailable: "
-			}
-			body, err := io.ReadAll(res.Body)
-			if err == nil {
-				errString += string(body)
-			}
-			return nil, errors.New(errString)
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	c.Close()
+	// The previous reader must finish before its callbacks and socket can be replaced.
+	c.workerMu.Lock()
+	done := c.workerDone
+	c.workerMu.Unlock()
+	if done != nil {
+		select {
+		case <-done:
+		case <-ctx.Done():
+			return nil, ctx.Err()
 		}
 	}
-	c.isClosed.Store(false)
-	c.conn.Store(conn)
+	u, err := url.Parse(ToWebsocketURL(urlPrefix))
+	if err != nil || u.Hostname() == "" || u.User != nil || (u.Scheme != "ws" && u.Scheme != "wss") {
+		return nil, ErrInvalidParameter
+	}
+	u.Path = strings.TrimRight(u.Path, "/") + "/rtc"
+	q := u.Query()
+	q.Set("protocol", fmt.Sprint(PROTOCOL))
+	q.Set("sdk", "go")
+	q.Set("version", Version)
+	if params.AutoSubscribe {
+		q.Set("auto_subscribe", "1")
+	} else {
+		q.Set("auto_subscribe", "0")
+	}
+	if params.Reconnect {
+		q.Set("reconnect", "1")
+	}
+	u.RawQuery = q.Encode()
 
-	// server should send join as soon as connected
-	res, err := c.readResponse()
+	header := newHeaderWithToken(token)
+	dialer, stopWatching := signalDialer(ctx)
+	defer stopWatching()
+	conn, response, err := dialer.DialContext(ctx, u.String(), header)
 	if err != nil {
+		if response != nil {
+			response.Body.Close()
+			status := response.StatusCode
+			// The Go dialer exposes the actual authenticated upgrade response.
+			if status == http.StatusRequestTimeout || status == http.StatusTooManyRequests || status >= 500 {
+				return nil, fmt.Errorf("%w: HTTP %d", ErrCannotConnectSignal, status)
+			}
+			return nil, fmt.Errorf("signal connection rejected: HTTP %d", status)
+		}
+		if ctx.Err() != nil {
+			return nil, classifySignalError(ctx.Err())
+		}
+		return nil, classifySignalError(err)
+	}
+	c.conn.Store(conn)
+	c.isClosed.Store(false)
+	if err := ctx.Err(); err != nil {
+		c.Close()
 		return nil, err
 	}
 
+	deadline, _ := ctx.Deadline()
+	conn.SetReadDeadline(deadline)
+	res, err := readSignalResponse(conn)
+	if err != nil {
+		c.Close()
+		if ctx.Err() != nil {
+			return nil, classifySignalError(ctx.Err())
+		}
+		return nil, classifySignalError(err)
+	}
+	conn.SetReadDeadline(time.Time{})
 	c.pendingResponse = nil
 	if params.Reconnect {
-		logger.Debugw("reconnect received response", "response", res.String())
+		logger.Debugw("reconnect received response", "type", fmt.Sprintf("%T", res.Message))
 		if res != nil {
 			if res.GetLeave() != nil {
-				return nil, fmt.Errorf("reconnect received left, reason: %s", res.GetLeave().GetReason())
+				c.Close()
+				if res.GetLeave().GetCanReconnect() || res.GetLeave().GetReason() == livekit.DisconnectReason_STATE_MISMATCH {
+					return nil, fmt.Errorf("%w: reconnect refused (%s)", ErrCannotConnectSignal, res.GetLeave().GetReason())
+				}
+				return nil, fmt.Errorf("reconnect refused (%s)", res.GetLeave().GetReason())
 			}
 			c.pendingResponse = res
 		}
@@ -130,7 +166,8 @@ func (c *SignalClient) Join(urlPrefix string, token string, params *ConnectParam
 
 	join := res.GetJoin()
 	if join == nil {
-		return nil, fmt.Errorf("unexpected response: %v", res.Message)
+		c.Close()
+		return nil, fmt.Errorf("unexpected join response: %T", res.Message)
 	}
 
 	return join, nil
@@ -227,15 +264,67 @@ func (c *SignalClient) SendUpdateParticipantMetadata(metadata *livekit.UpdatePar
 	})
 }
 
-func (c *SignalClient) readResponse() (*livekit.SignalResponse, error) {
-	if c.isClosed.Load() {
-		return nil, io.EOF
-	}
+// signalDialer binds pending TCP reads (including the HTTP upgrade) to the
+// caller's context. Stop watching once the handshake completes so a successful
+// WebSocket outlives its join context.
+func signalDialer(ctx context.Context) (websocket.Dialer, func()) {
+	dialer := *websocket.DefaultDialer
+	stop := make(chan struct{})
+	var readers sync.WaitGroup
 
-	conn := c.websocketConn()
-	if conn == nil {
-		return nil, errors.New("cannot read response before join")
+	watch := func(dial func(context.Context, string, string) (net.Conn, error)) func(context.Context, string, string) (net.Conn, error) {
+		return func(dialCtx context.Context, network, address string) (net.Conn, error) {
+			conn, err := dial(dialCtx, network, address)
+			if err == nil {
+				readers.Add(1)
+				go func() {
+					defer readers.Done()
+					select {
+					case <-stop:
+					case <-ctx.Done():
+						conn.Close()
+					}
+				}()
+			}
+			return conn, err
+		}
 	}
+	tcpDial := dialer.NetDialContext
+	if tcpDial == nil {
+		if dialer.NetDial != nil {
+			tcpDial = func(_ context.Context, network, address string) (net.Conn, error) {
+				return dialer.NetDial(network, address)
+			}
+		} else {
+			tcpDial = (&net.Dialer{}).DialContext
+		}
+	}
+	dialer.NetDialContext = watch(tcpDial)
+	if dialer.NetDialTLSContext != nil {
+		dialer.NetDialTLSContext = watch(dialer.NetDialTLSContext)
+	}
+	return dialer, func() { close(stop); readers.Wait() }
+}
+
+func classifySignalError(err error) error {
+	if errors.Is(err, context.Canceled) {
+		return context.Canceled
+	}
+	var authority x509.UnknownAuthorityError
+	var host x509.HostnameError
+	var invalid x509.CertificateInvalidError
+	if errors.As(err, &authority) || errors.As(err, &host) || errors.As(err, &invalid) {
+		return err
+	}
+	var networkError net.Error
+	if errors.As(err, &networkError) || errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) ||
+		websocket.IsCloseError(err, websocket.CloseAbnormalClosure, websocket.CloseGoingAway, websocket.CloseNormalClosure) {
+		return fmt.Errorf("%w: %v", ErrCannotConnectSignal, err)
+	}
+	return err
+}
+
+func readSignalResponse(conn *websocket.Conn) (*livekit.SignalResponse, error) {
 	// handle special messages and pass on the rest
 	messageType, payload, err := conn.ReadMessage()
 	if err != nil {
@@ -253,7 +342,7 @@ func (c *SignalClient) readResponse() (*livekit.SignalResponse, error) {
 		err := protojson.Unmarshal(payload, msg)
 		return msg, err
 	default:
-		return nil, nil
+		return nil, errors.New("unsupported signaling message")
 	}
 }
 
@@ -310,10 +399,13 @@ func (c *SignalClient) handleResponse(res *livekit.SignalResponse) {
 	}
 }
 
-func (c *SignalClient) readWorker() {
+func (c *SignalClient) readWorker(done chan struct{}) {
+	conn := c.websocketConn()
 	defer func() {
 		c.isStarted.Store(false)
-		if c.OnClose != nil {
+		intentional := c.isClosed.Load()
+		close(done)
+		if !intentional && c.OnClose != nil {
 			c.OnClose()
 		}
 	}()
@@ -322,7 +414,7 @@ func (c *SignalClient) readWorker() {
 		c.pendingResponse = nil
 	}
 	for !c.isClosed.Load() {
-		res, err := c.readResponse()
+		res, err := readSignalResponse(conn)
 		if err != nil {
 			if !isIgnoredWebsocketError(err) && !c.isClosed.Load() {
 				logger.Infow("error while reading from signal client", "err", err)

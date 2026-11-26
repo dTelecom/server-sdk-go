@@ -1,7 +1,10 @@
 package lksdk
 
 import (
+	"context"
 	"errors"
+
+	"github.com/dtelecom/server-sdk-go/internal/nodeurls"
 	"sync"
 	"time"
 
@@ -14,38 +17,34 @@ import (
 )
 
 type serverPool struct {
-	mu     sync.RWMutex
-	urls   []string
-	index  int
+	mu      sync.RWMutex
+	urls    []string
+	current string
 }
 
 func (p *serverPool) Init(urls []string) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-
-	p.urls = append([]string(nil), urls...)
-	p.index = 0
+	p.urls = nodeurls.Ordered("", urls)
+	p.current = ""
 }
 
 func (p *serverPool) Current() string {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
-
-	if len(p.urls) == 0 {
-		return ""
-	}
-	return p.urls[p.index]
+	return p.current
 }
 
-func (p *serverPool) Advance() string {
+func (p *serverPool) candidates() []string {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return nodeurls.Ordered(p.current, p.urls)
+}
+
+func (p *serverPool) connected(node string) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-
-	if len(p.urls) == 0 {
-		return ""
-	}
-	p.index = (p.index + 1) % len(p.urls)
-	return p.urls[p.index]
+	p.current = node
 }
 
 const (
@@ -58,6 +57,7 @@ const (
 )
 
 type RTCEngine struct {
+	transportMu        sync.Mutex
 	publisher          *PCTransport
 	subscriber         *PCTransport
 	client             *SignalClient
@@ -74,6 +74,8 @@ type RTCEngine struct {
 	reconnecting       atomic.Bool
 
 	serverPool serverPool
+	ctx        context.Context
+	cancel     context.CancelFunc
 
 	token      atomic.String
 	connParams *ConnectParams
@@ -96,7 +98,8 @@ type RTCEngine struct {
 }
 
 func NewRTCEngine() *RTCEngine {
-	e := &RTCEngine{
+	ctx, cancel := context.WithCancel(context.Background())
+	e := &RTCEngine{ctx: ctx, cancel: cancel,
 		client:             NewSignalClient(),
 		trackPublishedChan: make(chan *livekit.TrackPublishedResponse, 1),
 		JoinTimeout:        15 * time.Second,
@@ -133,7 +136,7 @@ func NewRTCEngine() *RTCEngine {
 }
 
 func (e *RTCEngine) join(url string, token string, params *ConnectParams) (*livekit.JoinResponse, error) {
-	res, err := e.client.Join(url, token, params)
+	res, err := e.client.join(e.ctx, url, token, params, e.JoinTimeout)
 	if err != nil {
 		return nil, err
 	}
@@ -155,55 +158,60 @@ func (e *RTCEngine) join(url string, token string, params *ConnectParams) (*live
 	if err = e.waitUntilConnected(); err != nil {
 		return nil, err
 	}
-	e.hasConnected.Store(true)
-	return res, err
+	return res, nil
 }
 
 func (e *RTCEngine) JoinWithServers(urls []string, token string, params *ConnectParams) (*livekit.JoinResponse, error) {
-	if len(urls) == 0 {
-		return nil, errors.New("no servers provided")
-	}
-
 	e.serverPool.Init(urls)
+	return e.joinCandidates(token, params)
+}
 
-	res, err := e.client.Join(e.serverPool.Current(), token, params)
-	if err != nil {
-		return nil, err
+func retryableJoinError(err error) bool {
+	return errors.Is(err, ErrCannotConnectSignal) || errors.Is(err, ErrConnectionTimeout)
+}
+
+func (e *RTCEngine) joinCandidates(token string, params *ConnectParams) (*livekit.JoinResponse, error) {
+	var lastErr error = ErrURLNotProvided
+	for _, node := range e.serverPool.candidates() {
+		if err := e.ctx.Err(); err != nil {
+			return nil, err
+		}
+		res, err := e.join(node, token, params)
+		if err == nil {
+			e.serverPool.connected(node)
+			e.hasConnected.Store(true)
+			return res, nil
+		}
+		e.closeTransports()
+		if !retryableJoinError(err) {
+			return nil, err
+		}
+		lastErr = err
 	}
-	
-	e.token.Store(token)
-	e.connParams = params
-
-	if err = e.configure(res); err != nil {
-		return nil, err
-	}
-
-	e.client.Start()
-
-	// send offer
-	if !res.SubscriberPrimary {
-		e.publisher.Negotiate()
-	}
-
-	if err = e.waitUntilConnected(); err != nil {
-		return nil, err
-	}
-	e.hasConnected.Store(true)
-	return res, err
+	return nil, lastErr
 }
 
 func (e *RTCEngine) Close() {
 	if !e.closed.CompareAndSwap(false, true) {
 		return
 	}
+	e.cancel()
+	e.closeTransports()
+}
+
+func (e *RTCEngine) closeTransports() {
+	e.client.Close()
+	e.transportMu.Lock()
+	defer e.transportMu.Unlock()
 	if e.publisher != nil {
 		_ = e.publisher.Close()
 	}
 	if e.subscriber != nil {
 		_ = e.subscriber.Close()
 	}
-
-	e.client.Close()
+	e.dclock.Lock()
+	e.reliableDC, e.lossyDC, e.reliableDCSub, e.lossyDCSub = nil, nil, nil, nil
+	e.dclock.Unlock()
 }
 
 func (e *RTCEngine) IsConnected() bool {
@@ -231,6 +239,11 @@ func (e *RTCEngine) setRTT(rtt uint32) {
 }
 
 func (e *RTCEngine) configure(res *livekit.JoinResponse) error {
+	e.transportMu.Lock()
+	defer e.transportMu.Unlock()
+	if err := e.ctx.Err(); err != nil {
+		return err
+	}
 	iceServers := FromProtoIceServers(res.IceServers)
 	configuration := webrtc.Configuration{ICEServers: iceServers}
 	if res.GetClientConfiguration().GetForceRelay() == livekit.ClientConfigSetting_ENABLED {
@@ -381,6 +394,8 @@ func (e *RTCEngine) waitUntilConnected() error {
 	timeout := time.After(e.JoinTimeout)
 	for {
 		select {
+		case <-e.ctx.Done():
+			return e.ctx.Err()
 		case <-timeout:
 			return ErrConnectionTimeout
 		case <-time.After(10 * time.Millisecond):
@@ -407,6 +422,8 @@ func (e *RTCEngine) ensurePublisherConnected(ensureDataReady bool) error {
 	timeout := time.After(e.JoinTimeout)
 	for {
 		select {
+		case <-e.ctx.Done():
+			return e.ctx.Err()
 		case <-timeout:
 			return ErrConnectionTimeout
 		case <-time.After(10 * time.Millisecond):
@@ -422,7 +439,7 @@ func (e *RTCEngine) ensurePublisherConnected(ensureDataReady bool) error {
 func (e *RTCEngine) dataPubChannelReady() bool {
 	e.dclock.RLock()
 	defer e.dclock.RUnlock()
-	return e.reliableDC.ReadyState() == webrtc.DataChannelStateOpen && e.lossyDC.ReadyState() == webrtc.DataChannelStateOpen
+	return e.reliableDC != nil && e.lossyDC != nil && e.reliableDC.ReadyState() == webrtc.DataChannelStateOpen && e.lossyDC.ReadyState() == webrtc.DataChannelStateOpen
 }
 
 func (e *RTCEngine) handleLocalTrackPublished(res *livekit.TrackPublishedResponse) {
@@ -469,14 +486,21 @@ func (e *RTCEngine) handleDisconnect(fullReconnect bool) {
 	go func() {
 		defer e.reconnecting.Store(false)
 		var reconnectCount int
+		restartAnnounced := false
 		for ; reconnectCount < maxReconnectCount; reconnectCount++ {
 			if fullReconnect {
-				if reconnectCount == 0 && e.OnRestarting != nil {
-					e.OnRestarting()
+				if !restartAnnounced {
+					restartAnnounced = true
+					if e.OnRestarting != nil {
+						e.OnRestarting()
+					}
 				}
 				logger.Infow("restarting connection...", "server", e.serverPool.Current(), "reconnectCount", reconnectCount)
 				if err := e.restartConnection(); err != nil {
 					logger.Errorw("restart connection failed", err)
+					if !retryableJoinError(err) {
+						break
+					}
 				} else {
 					return
 				}
@@ -487,6 +511,9 @@ func (e *RTCEngine) handleDisconnect(fullReconnect bool) {
 				logger.Infow("resuming connection...", "reconnectCount", reconnectCount)
 				if err := e.resumeConnection(); err != nil {
 					logger.Errorw("resume connection failed", err)
+					if !retryableJoinError(err) {
+						break
+					}
 					fullReconnect = true
 				} else {
 					return
@@ -498,18 +525,24 @@ func (e *RTCEngine) handleDisconnect(fullReconnect bool) {
 				break
 			}
 			if reconnectCount < maxReconnectCount-1 {
-				time.Sleep(delay)
+				select {
+				case <-e.ctx.Done():
+					return
+				case <-time.After(delay):
+				}
 			}
 		}
 
-		if e.OnDisconnected != nil {
+		if !e.closed.Load() && e.OnDisconnected != nil {
 			e.OnDisconnected()
 		}
 	}()
 }
 
 func (e *RTCEngine) resumeConnection() error {
-	_, err := e.client.Join(e.serverPool.Current(), e.token.Load(), &ConnectParams{Reconnect: true})
+	params := *e.connParams
+	params.Reconnect = true
+	_, err := e.client.join(e.ctx, e.serverPool.Current(), e.token.Load(), &params, e.JoinTimeout)
 	if err != nil {
 		return err
 	}
@@ -537,16 +570,8 @@ func (e *RTCEngine) restartConnection() error {
 	if e.client.IsStarted() {
 		e.client.SendLeave()
 	}
-	e.client.Close()
-	if e.publisher != nil {
-		e.publisher.Close()
-	}
-
-	if e.subscriber != nil {
-		e.subscriber.Close()
-	}
-
-	res, err := e.join(e.serverPool.Current(), e.token.Load(), e.connParams)
+	e.closeTransports()
+	res, err := e.joinCandidates(e.token.Load(), e.connParams)
 	if err != nil {
 		return err
 	}
@@ -581,10 +606,6 @@ func (e *RTCEngine) handleLeave(leave *livekit.LeaveRequest) {
 			e.OnDisconnected()
 		}
 		return
-	}
-
-	if leave.GetReason().String() == "SERVER_SHUTDOWN" {
-		e.serverPool.Advance()
 	}
 
 	e.handleDisconnect(true)
