@@ -121,7 +121,7 @@ http.HandleFunc("/webhook", func(w http.ResponseWriter, r *http.Request) {
 
 ### Tests
 
-Run the offline suite with `go test ./...`. CI also builds the room-management example and tests the candidate SDK from a separate Go module. The consumer uses the public protocol version selected by Go. See the [tested SDK combinations](https://docs.dtelecom.org/reference/sdks/#tested-combinations) for the Go toolchains and client flows verified against Cloud.
+Run the offline suite with `go test ./...`. CI also builds the room-management example and tests the candidate SDK from a separate Go module. The consumer uses the public protocol version selected by Go. See the [SDK catalog](https://docs.dtelecom.org/reference/sdks/) for supported packages and examples.
 
 The **Go SDK tests** workflow offers a manual **live** input on the default branch. It joins two participants using short-lived Cloud tokens, publishes an audio track, exchanges reliable data, checks both identities with the room-management example and exercises the room APIs. The job uses a dedicated test project configured in the `sdk-live-tests` environment and sends no requests on pull requests.
 
