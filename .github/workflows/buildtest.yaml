@@ -13,6 +13,18 @@ permissions:
   contents: read
 
 jobs:
+  cloud-minimum:
+    name: Cloud SDK on Go 1.18
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.18.10'
+      - run: go test -mod=readonly -count=1 ./cloud
+
   test:
     runs-on: ubuntu-latest
     strategy:

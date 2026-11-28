@@ -3,6 +3,8 @@
 Use this SDK from your Go backend with [dTelecom Cloud](https://cloud.dtelecom.org): participant tokens,
 room administration, webhooks and the hosted AI services, in the `cloud` package.
 
+[![Go SDK consumer CI](https://github.com/dTelecom/server-sdk-go/actions/workflows/consumer-ci.yaml/badge.svg?branch=dtelecom-db)](https://github.com/dTelecom/server-sdk-go/actions/workflows/consumer-ci.yaml)
+
 **Documentation:** [docs.dtelecom.org](https://docs.dtelecom.org), see the
 [server SDK reference](https://docs.dtelecom.org/reference/server-sdk/) and the
 [quickstart](https://docs.dtelecom.org/quickstart/).
